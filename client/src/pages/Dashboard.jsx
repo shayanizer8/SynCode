@@ -1,6 +1,8 @@
+import { useState } from "react";
 import {
   ArrowRight,
   ArrowLeftRight,
+  ChevronDown,
   Copy,
   Filter,
   FolderClosed,
@@ -12,6 +14,7 @@ import {
   Search,
   Settings,
   Trash2,
+  X,
 } from "lucide-react";
 
 const rooms = [
@@ -81,10 +84,28 @@ const badgeClassMap = {
 
 const avatarToneClass = ["tone-a", "tone-b", "tone-c", "tone-d"];
 
+const recentRooms = [
+  { id: "r1", name: "API Gateway", language: "JavaScript" },
+  { id: "r2", name: "ML Sandbox", language: "Python" },
+  { id: "r3", name: "Compiler Notes", language: "C++" },
+];
+
 const Dashboard = () => {
+  const [isRoomModalOpen, setIsRoomModalOpen] = useState(false);
+  const [activeModalTab, setActiveModalTab] = useState("create");
+  const [isPrivateRoom, setIsPrivateRoom] = useState(true);
   const params = new URLSearchParams(window.location.search);
   const isEmptyState = params.get("state") === "empty";
   const visibleRooms = isEmptyState ? [] : rooms;
+
+  const openRoomModal = () => {
+    setActiveModalTab("create");
+    setIsRoomModalOpen(true);
+  };
+
+  const closeRoomModal = () => {
+    setIsRoomModalOpen(false);
+  };
 
   return (
     <div className="dashboard-page">
@@ -130,7 +151,7 @@ const Dashboard = () => {
             <p>Manage and jump into your collaborative sessions</p>
           </div>
           {visibleRooms.length > 0 ? (
-            <button type="button" className="btn btn-filled dashboard-new-btn">
+            <button type="button" className="btn btn-filled dashboard-new-btn" onClick={openRoomModal}>
               <Plus size={16} />
               <span>New Room</span>
             </button>
@@ -217,13 +238,135 @@ const Dashboard = () => {
             </div>
             <h2>No rooms yet</h2>
             <p>Create your first coding room and invite your team</p>
-            <button type="button" className="btn btn-filled">
+            <button type="button" className="btn btn-filled" onClick={openRoomModal}>
               <Plus size={16} />
               <span>Create a Room</span>
             </button>
           </section>
         )}
       </main>
+
+      {isRoomModalOpen ? (
+        <div className="room-modal-overlay" onClick={closeRoomModal} role="presentation">
+          <section className="room-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+            <button type="button" className="room-modal-close" onClick={closeRoomModal} aria-label="Close modal">
+              <X size={18} />
+            </button>
+
+            <div className="room-modal-tabs" role="tablist" aria-label="Room mode">
+              <button
+                type="button"
+                role="tab"
+                className={`room-modal-tab${activeModalTab === "create" ? " is-active" : ""}`}
+                onClick={() => setActiveModalTab("create")}
+                aria-selected={activeModalTab === "create"}
+              >
+                Create Room
+              </button>
+              <button
+                type="button"
+                role="tab"
+                className={`room-modal-tab${activeModalTab === "join" ? " is-active" : ""}`}
+                onClick={() => setActiveModalTab("join")}
+                aria-selected={activeModalTab === "join"}
+              >
+                Join Room
+              </button>
+            </div>
+
+            {activeModalTab === "create" ? (
+              <div className="room-modal-content">
+                <div className="room-field">
+                  <label htmlFor="room-name">Room Name</label>
+                  <input id="room-name" type="text" placeholder="e.g. My Python Project" />
+                </div>
+
+                <div className="room-field">
+                  <label htmlFor="room-language">Language</label>
+                  <div className="modal-select-wrap">
+                    <select id="room-language" defaultValue="Python">
+                      <option>Python</option>
+                      <option>JavaScript</option>
+                      <option>C++</option>
+                      <option>Java</option>
+                    </select>
+                    <ChevronDown size={16} />
+                  </div>
+                </div>
+
+                <div className="room-toggle-row">
+                  <div>
+                    <p>Private Room</p>
+                    <span>Only invited members can join</span>
+                  </div>
+                  <button
+                    type="button"
+                    className={`toggle-switch ${isPrivateRoom ? "is-on" : ""}`}
+                    onClick={() => setIsPrivateRoom((prev) => !prev)}
+                    aria-label="Toggle room privacy"
+                  >
+                    <span className="toggle-knob" />
+                  </button>
+                </div>
+
+                <div className="room-field">
+                  <label htmlFor="invite-email">Invite by Email (optional)</label>
+                  <input id="invite-email" type="text" placeholder="Enter email and press Enter" />
+                  <div className="email-tag-list">
+                    <span className="email-tag">
+                      ahmed@gmail.com
+                      <button type="button" aria-label="Remove ahmed@gmail.com">
+                        <X size={12} />
+                      </button>
+                    </span>
+                    <span className="email-tag">
+                      sara@gmail.com
+                      <button type="button" aria-label="Remove sara@gmail.com">
+                        <X size={12} />
+                      </button>
+                    </span>
+                  </div>
+                </div>
+
+                <button type="button" className="btn btn-filled room-modal-submit">
+                  Create Room
+                </button>
+              </div>
+            ) : (
+              <div className="room-modal-content">
+                <div className="room-field">
+                  <label htmlFor="room-code">Room Code or Invite Link</label>
+                  <input id="room-code" type="text" placeholder="Paste your invite link or room code here" />
+                  <small>Ask your collaborator to share their room invite link</small>
+                </div>
+
+                <div className="or-divider">
+                  <span>or</span>
+                </div>
+
+                <div className="recent-rooms">
+                  <h3>Recently Visited Rooms</h3>
+                  {recentRooms.map((room) => (
+                    <div className="recent-room-row" key={room.id}>
+                      <div>
+                        <p>{room.name}</p>
+                        <span className={`lang-badge ${badgeClassMap[room.language] || "badge-python"}`}>
+                          {room.language}
+                        </span>
+                      </div>
+                      <button type="button">Join</button>
+                    </div>
+                  ))}
+                </div>
+
+                <button type="button" className="btn btn-filled room-modal-submit">
+                  Join Room
+                </button>
+              </div>
+            )}
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 };
