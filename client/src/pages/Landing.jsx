@@ -83,7 +83,7 @@ const Landing = () => {
                 </button>
               </div>
 
-              <p className="social-proof">Trusted by developers</p>
+              <p className="social-proof">Trusted by programmers</p>
             </div>
 
             <div className="editor-mockup" aria-label="Live collaborative editor preview">
