@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import {
   ArrowRight,
   ArrowLeftRight,
@@ -208,10 +209,10 @@ const Dashboard = () => {
                       ))}
                     </div>
 
-                    <button type="button" className="room-open-btn">
+                    <Link to="/editor" className="room-open-btn">
                       Open Room
                       <ArrowRight size={14} />
-                    </button>
+                    </Link>
                   </div>
 
                   {room.menuOpen ? (
