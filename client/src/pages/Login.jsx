@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { loginRequest } from "../services/authApi";
+import { getRoomsRequest } from "../services/roomsApi";
 import { ArrowLeftRight, Eye, EyeOff } from "lucide-react";
 
 const Login = () => {
@@ -65,7 +66,15 @@ const Login = () => {
       }
 
       localStorage.setItem("token", token);
-      navigate("/dashboard");
+
+      const roomsResponse = await getRoomsRequest(token);
+      const initialRooms = Array.isArray(roomsResponse.data?.rooms) ? roomsResponse.data.rooms : [];
+
+      navigate("/dashboard", {
+        state: {
+          initialRooms,
+        },
+      });
     } catch (error) {
       const message = error.response?.data?.message || "Unable to login. Please try again.";
       setServerError(message);
