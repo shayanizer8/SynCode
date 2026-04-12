@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { getRoomsRequest } from "../services/roomsApi";
 import {
   ArrowRight,
   ArrowLeftRight,
@@ -17,58 +18,6 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-
-const rooms = [
-  {
-    id: 1,
-    language: "Python",
-    name: "Neural Network Core",
-    edited: "Edited 2 hours ago",
-    collaborators: ["AK", "LM", "+2"],
-    live: true,
-  },
-  {
-    id: 2,
-    language: "JavaScript",
-    name: "Frontend Realtime Sync",
-    edited: "Edited 5 minutes ago",
-    collaborators: ["RJ"],
-    live: false,
-    menuOpen: true,
-  },
-  {
-    id: 3,
-    language: "C++",
-    name: "Game Engine Physics",
-    edited: "Edited 1 day ago",
-    collaborators: ["MA", "SR"],
-    live: false,
-  },
-  {
-    id: 4,
-    language: "Python",
-    name: "Data Scraper v2",
-    edited: "Edited 3 hours ago",
-    collaborators: ["NR"],
-    live: false,
-  },
-  {
-    id: 5,
-    language: "JavaScript",
-    name: "React Auth Hooks",
-    edited: "Edited 5 hours ago",
-    collaborators: ["SK", "AA"],
-    live: false,
-  },
-  {
-    id: 6,
-    language: "Java",
-    name: "Legacy Kernel Fix",
-    edited: "Edited 2 days ago",
-    collaborators: ["VN"],
-    live: false,
-  },
-];
 
 const navItems = [
   { key: "home", label: "Home", icon: Home, active: true },
@@ -91,13 +40,94 @@ const recentRooms = [
   { id: "r3", name: "Compiler Notes", language: "C++" },
 ];
 
+const getRelativeEditedLabel = (updatedAt) => {
+  if (!updatedAt) {
+    return "Edited recently";
+  }
+
+  const updatedTime = new Date(updatedAt).getTime();
+
+  if (Number.isNaN(updatedTime)) {
+    return "Edited recently";
+  }
+
+  const diffMs = Date.now() - updatedTime;
+  const minuteMs = 60 * 1000;
+  const hourMs = 60 * minuteMs;
+  const dayMs = 24 * hourMs;
+
+  if (diffMs < hourMs) {
+    const minutes = Math.max(1, Math.floor(diffMs / minuteMs));
+    return `Edited ${minutes} minute${minutes === 1 ? "" : "s"} ago`;
+  }
+
+  if (diffMs < dayMs) {
+    const hours = Math.floor(diffMs / hourMs);
+    return `Edited ${hours} hour${hours === 1 ? "" : "s"} ago`;
+  }
+
+  const days = Math.floor(diffMs / dayMs);
+  return `Edited ${days} day${days === 1 ? "" : "s"} ago`;
+};
+
 const Dashboard = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const initialRooms = Array.isArray(location.state?.initialRooms) ? location.state.initialRooms : [];
+
+  const [rooms, setRooms] = useState(initialRooms);
+  const [isLoadingRooms, setIsLoadingRooms] = useState(true);
+  const [roomsError, setRoomsError] = useState("");
   const [isRoomModalOpen, setIsRoomModalOpen] = useState(false);
+  const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
   const [activeModalTab, setActiveModalTab] = useState("create");
   const [isPrivateRoom, setIsPrivateRoom] = useState(true);
-  const params = new URLSearchParams(window.location.search);
-  const isEmptyState = params.get("state") === "empty";
-  const visibleRooms = isEmptyState ? [] : rooms;
+
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+
+    if (!token) {
+      navigate("/login");
+      return;
+    }
+
+    const fetchRooms = async () => {
+      try {
+        setIsLoadingRooms(true);
+        setRoomsError("");
+
+        const response = await getRoomsRequest(token);
+        const apiRooms = Array.isArray(response.data?.rooms) ? response.data.rooms : [];
+        setRooms(apiRooms);
+      } catch (error) {
+        const status = error.response?.status;
+
+        if (status === 401) {
+          localStorage.removeItem("token");
+          navigate("/login");
+          return;
+        }
+
+        const message = error.response?.data?.message || "Unable to load rooms right now.";
+        setRoomsError(message);
+      } finally {
+        setIsLoadingRooms(false);
+      }
+    };
+
+    fetchRooms();
+  }, [navigate]);
+
+  const visibleRooms = useMemo(
+    () =>
+      rooms.map((room) => ({
+        ...room,
+        id: room._id || room.id,
+        edited: getRelativeEditedLabel(room.updatedAt),
+        collaborators: Array.isArray(room.collaborators) ? room.collaborators : [],
+      })),
+    [rooms]
+  );
 
   const openRoomModal = () => {
     setActiveModalTab("create");
@@ -106,6 +136,21 @@ const Dashboard = () => {
 
   const closeRoomModal = () => {
     setIsRoomModalOpen(false);
+  };
+
+  const handleLogout = () => {
+    setIsLogoutConfirmOpen(true);
+  };
+
+  const closeLogoutConfirm = () => {
+    setIsLogoutConfirmOpen(false);
+  };
+
+  const confirmLogout = () => {
+    setIsLogoutConfirmOpen(false);
+
+    localStorage.removeItem("token");
+    navigate("/login", { replace: true });
   };
 
   return (
@@ -139,7 +184,13 @@ const Dashboard = () => {
             <span className="sidebar-avatar">SC</span>
             <span className="online-dot" aria-hidden="true"></span>
           </button>
-          <button type="button" className="sidebar-icon-btn" data-tooltip="Logout" aria-label="Logout">
+          <button
+            type="button"
+            className="sidebar-icon-btn"
+            data-tooltip="Logout"
+            aria-label="Logout"
+            onClick={handleLogout}
+          >
             <LogOut size={18} />
           </button>
         </div>
@@ -161,7 +212,19 @@ const Dashboard = () => {
 
         <div className="dashboard-divider" />
 
-        {visibleRooms.length > 0 ? (
+        {roomsError ? <p className="form-server-error">{roomsError}</p> : null}
+
+        {isLoadingRooms ? (
+          <section className="rooms-empty-state" aria-label="Rooms loading state">
+            <div className="empty-illustration" aria-hidden="true">
+              <ArrowLeftRight size={34} />
+            </div>
+            <h2>Loading rooms...</h2>
+            <p>Fetching your latest collaborative sessions</p>
+          </section>
+        ) : null}
+
+        {!isLoadingRooms && visibleRooms.length > 0 ? (
           <>
             <div className="dashboard-search-row">
               <label className="dashboard-search" htmlFor="room-search">
@@ -232,7 +295,9 @@ const Dashboard = () => {
               ))}
             </section>
           </>
-        ) : (
+        ) : null}
+
+        {!isLoadingRooms && visibleRooms.length === 0 ? (
           <section className="rooms-empty-state" aria-label="Empty rooms state">
             <div className="empty-illustration" aria-hidden="true">
               <ArrowLeftRight size={34} />
@@ -244,7 +309,7 @@ const Dashboard = () => {
               <span>Create a Room</span>
             </button>
           </section>
-        )}
+        ) : null}
       </main>
 
       {isRoomModalOpen ? (
@@ -365,6 +430,35 @@ const Dashboard = () => {
                 </button>
               </div>
             )}
+          </section>
+        </div>
+      ) : null}
+
+      {isLogoutConfirmOpen ? (
+        <div className="room-modal-overlay" onClick={closeLogoutConfirm} role="presentation">
+          <section className="room-modal logout-confirm-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+            <button
+              type="button"
+              className="room-modal-close"
+              onClick={closeLogoutConfirm}
+              aria-label="Close logout confirmation"
+            >
+              <X size={18} />
+            </button>
+
+            <div className="logout-confirm-content">
+              <h2>Log out of SynCode?</h2>
+              <p>You will need to sign in again to access your dashboard.</p>
+
+              <div className="logout-confirm-actions">
+                <button type="button" className="btn btn-ghost" onClick={closeLogoutConfirm}>
+                  Cancel
+                </button>
+                <button type="button" className="btn btn-filled" onClick={confirmLogout}>
+                  Logout
+                </button>
+              </div>
+            </div>
           </section>
         </div>
       ) : null}

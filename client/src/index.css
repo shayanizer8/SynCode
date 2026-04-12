@@ -1348,6 +1348,36 @@ a {
   gap: 13px;
 }
 
+.logout-confirm-modal {
+  width: min(430px, 100%);
+}
+
+.logout-confirm-content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 10px;
+}
+
+.logout-confirm-content h2 {
+  margin: 0;
+  font-size: 1.28rem;
+  letter-spacing: -0.02em;
+}
+
+.logout-confirm-content p {
+  margin: 0;
+  color: var(--text-soft);
+  line-height: 1.5;
+}
+
+.logout-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+}
+
 .room-field {
   display: flex;
   flex-direction: column;
