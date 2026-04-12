@@ -12,3 +12,10 @@ const authClient = axios.create({
 export const registerRequest = (payload) => authClient.post("/register", payload);
 
 export const loginRequest = (payload) => authClient.post("/login", payload);
+
+export const getCurrentUserRequest = (token) =>
+  authClient.get("/me", {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
