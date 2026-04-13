@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { getRoomsRequest } from "../services/roomsApi";
+import {
+  createRoomRequest,
+  getRecentRoomsRequest,
+  getRoomsRequest,
+  joinRoomByIdRequest,
+  joinRoomByInviteRequest,
+} from "../services/roomsApi";
 import {
   ArrowRight,
   ArrowLeftRight,
@@ -33,12 +39,14 @@ const badgeClassMap = {
 };
 
 const avatarToneClass = ["tone-a", "tone-b", "tone-c", "tone-d"];
+const roomLanguageOptions = ["Python", "JavaScript", "C++", "Java"];
 
-const recentRooms = [
-  { id: "r1", name: "API Gateway", language: "JavaScript" },
-  { id: "r2", name: "ML Sandbox", language: "Python" },
-  { id: "r3", name: "Compiler Notes", language: "C++" },
-];
+const initialCreateFormState = {
+  name: "",
+  language: "Python",
+  isPrivate: true,
+  inviteEmail: "",
+};
 
 const getRelativeEditedLabel = (updatedAt) => {
   if (!updatedAt) {
@@ -81,9 +89,17 @@ const Dashboard = () => {
   const [isRoomModalOpen, setIsRoomModalOpen] = useState(false);
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
   const [activeModalTab, setActiveModalTab] = useState("create");
-  const [isPrivateRoom, setIsPrivateRoom] = useState(true);
+  const [createForm, setCreateForm] = useState(initialCreateFormState);
+  const [createRoomError, setCreateRoomError] = useState("");
+  const [isCreatingRoom, setIsCreatingRoom] = useState(false);
+  const [joinInput, setJoinInput] = useState("");
+  const [joinRoomError, setJoinRoomError] = useState("");
+  const [isJoiningRoom, setIsJoiningRoom] = useState(false);
+  const [recentRooms, setRecentRooms] = useState([]);
+  const [isRecentRoomsLoading, setIsRecentRoomsLoading] = useState(false);
+  const [recentRoomsError, setRecentRoomsError] = useState("");
 
-  useEffect(() => {
+  const refreshRooms = async () => {
     const token = localStorage.getItem("token");
 
     if (!token) {
@@ -91,32 +107,69 @@ const Dashboard = () => {
       return;
     }
 
-    const fetchRooms = async () => {
-      try {
-        setIsLoadingRooms(true);
-        setRoomsError("");
+    try {
+      setIsLoadingRooms(true);
+      setRoomsError("");
 
-        const response = await getRoomsRequest(token);
-        const apiRooms = Array.isArray(response.data?.rooms) ? response.data.rooms : [];
-        setRooms(apiRooms);
-      } catch (error) {
-        const status = error.response?.status;
+      const response = await getRoomsRequest(token);
+      const apiRooms = Array.isArray(response.data?.rooms) ? response.data.rooms : [];
+      setRooms(apiRooms);
+    } catch (error) {
+      const status = error.response?.status;
 
-        if (status === 401) {
-          localStorage.removeItem("token");
-          navigate("/login");
-          return;
-        }
-
-        const message = error.response?.data?.message || "Unable to load rooms right now.";
-        setRoomsError(message);
-      } finally {
-        setIsLoadingRooms(false);
+      if (status === 401) {
+        localStorage.removeItem("token");
+        navigate("/login");
+        return;
       }
-    };
 
-    fetchRooms();
+      const message = error.response?.data?.message || "Unable to load rooms right now.";
+      setRoomsError(message);
+    } finally {
+      setIsLoadingRooms(false);
+    }
+  };
+
+  const fetchRecentRooms = async () => {
+    const token = localStorage.getItem("token");
+
+    if (!token) {
+      navigate("/login");
+      return;
+    }
+
+    try {
+      setIsRecentRoomsLoading(true);
+      setRecentRoomsError("");
+
+      const response = await getRecentRoomsRequest(token);
+      const apiRooms = Array.isArray(response.data?.rooms) ? response.data.rooms : [];
+      setRecentRooms(apiRooms);
+    } catch (error) {
+      const status = error.response?.status;
+
+      if (status === 401) {
+        localStorage.removeItem("token");
+        navigate("/login");
+        return;
+      }
+
+      const message = error.response?.data?.message || "Unable to load recent rooms.";
+      setRecentRoomsError(message);
+    } finally {
+      setIsRecentRoomsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    refreshRooms();
   }, [navigate]);
+
+  useEffect(() => {
+    if (isRoomModalOpen && activeModalTab === "join") {
+      fetchRecentRooms();
+    }
+  }, [activeModalTab, isRoomModalOpen]);
 
   const visibleRooms = useMemo(
     () =>
@@ -131,11 +184,159 @@ const Dashboard = () => {
 
   const openRoomModal = () => {
     setActiveModalTab("create");
+    setCreateRoomError("");
+    setJoinRoomError("");
     setIsRoomModalOpen(true);
   };
 
   const closeRoomModal = () => {
     setIsRoomModalOpen(false);
+  };
+
+  const switchModalTab = (tab) => {
+    setActiveModalTab(tab);
+    setCreateRoomError("");
+    setJoinRoomError("");
+  };
+
+  const handleCreateInputChange = (event) => {
+    const { name, value } = event.target;
+
+    setCreateForm((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+    setCreateRoomError("");
+  };
+
+  const handleCreateRoom = async () => {
+    if (!createForm.name.trim()) {
+      setCreateRoomError("Room name is required");
+      return;
+    }
+
+    const token = localStorage.getItem("token");
+
+    if (!token) {
+      navigate("/login");
+      return;
+    }
+
+    try {
+      setIsCreatingRoom(true);
+      setCreateRoomError("");
+
+      const response = await createRoomRequest(token, {
+        name: createForm.name.trim(),
+        language: createForm.language,
+        isPrivate: createForm.isPrivate,
+        inviteEmail: createForm.inviteEmail.trim(),
+      });
+
+      const createdRoom = response.data?.room;
+
+      if (!createdRoom?._id) {
+        setCreateRoomError("Room could not be created. Please try again.");
+        return;
+      }
+
+      await refreshRooms();
+      setCreateForm(initialCreateFormState);
+      setIsRoomModalOpen(false);
+      navigate(`/editor?roomId=${createdRoom._id}`);
+    } catch (error) {
+      const status = error.response?.status;
+
+      if (status === 401) {
+        localStorage.removeItem("token");
+        navigate("/login");
+        return;
+      }
+
+      const message = error.response?.data?.message || "Unable to create room right now.";
+      setCreateRoomError(message);
+    } finally {
+      setIsCreatingRoom(false);
+    }
+  };
+
+  const handleJoinByInvite = async () => {
+    if (!joinInput.trim()) {
+      setJoinRoomError("Invite code or link is required");
+      return;
+    }
+
+    const token = localStorage.getItem("token");
+
+    if (!token) {
+      navigate("/login");
+      return;
+    }
+
+    try {
+      setIsJoiningRoom(true);
+      setJoinRoomError("");
+
+      const response = await joinRoomByInviteRequest(token, {
+        inviteCodeOrLink: joinInput.trim(),
+      });
+
+      const joinedRoom = response.data?.room;
+
+      if (!joinedRoom?._id) {
+        setJoinRoomError("Unable to join room. Please try again.");
+        return;
+      }
+
+      await refreshRooms();
+      setJoinInput("");
+      setIsRoomModalOpen(false);
+      navigate(`/editor?roomId=${joinedRoom._id}`);
+    } catch (error) {
+      const status = error.response?.status;
+
+      if (status === 401) {
+        localStorage.removeItem("token");
+        navigate("/login");
+        return;
+      }
+
+      const message = error.response?.data?.message || "Unable to join room right now.";
+      setJoinRoomError(message);
+    } finally {
+      setIsJoiningRoom(false);
+    }
+  };
+
+  const handleJoinRecentRoom = async (roomId) => {
+    const token = localStorage.getItem("token");
+
+    if (!token) {
+      navigate("/login");
+      return;
+    }
+
+    try {
+      setIsJoiningRoom(true);
+      setJoinRoomError("");
+      await joinRoomByIdRequest(token, roomId);
+      await refreshRooms();
+      setIsRoomModalOpen(false);
+      navigate(`/editor?roomId=${roomId}`);
+    } catch (error) {
+      const status = error.response?.status;
+
+      if (status === 401) {
+        localStorage.removeItem("token");
+        navigate("/login");
+        return;
+      }
+
+      const message = error.response?.data?.message || "Unable to join selected room.";
+      setJoinRoomError(message);
+    } finally {
+      setIsJoiningRoom(false);
+    }
   };
 
   const handleLogout = () => {
@@ -272,7 +473,7 @@ const Dashboard = () => {
                       ))}
                     </div>
 
-                    <Link to="/editor" className="room-open-btn">
+                    <Link to={`/editor?roomId=${room.id}`} className="room-open-btn">
                       Open Room
                       <ArrowRight size={14} />
                     </Link>
@@ -324,7 +525,7 @@ const Dashboard = () => {
                 type="button"
                 role="tab"
                 className={`room-modal-tab${activeModalTab === "create" ? " is-active" : ""}`}
-                onClick={() => setActiveModalTab("create")}
+                onClick={() => switchModalTab("create")}
                 aria-selected={activeModalTab === "create"}
               >
                 Create Room
@@ -333,7 +534,7 @@ const Dashboard = () => {
                 type="button"
                 role="tab"
                 className={`room-modal-tab${activeModalTab === "join" ? " is-active" : ""}`}
-                onClick={() => setActiveModalTab("join")}
+                onClick={() => switchModalTab("join")}
                 aria-selected={activeModalTab === "join"}
               >
                 Join Room
@@ -342,19 +543,29 @@ const Dashboard = () => {
 
             {activeModalTab === "create" ? (
               <div className="room-modal-content">
+                {createRoomError ? <p className="form-server-error">{createRoomError}</p> : null}
+
                 <div className="room-field">
                   <label htmlFor="room-name">Room Name</label>
-                  <input id="room-name" type="text" placeholder="e.g. My Python Project" />
+                  <input
+                    id="room-name"
+                    name="name"
+                    type="text"
+                    placeholder="e.g. My Python Project"
+                    value={createForm.name}
+                    onChange={handleCreateInputChange}
+                  />
                 </div>
 
                 <div className="room-field">
                   <label htmlFor="room-language">Language</label>
                   <div className="modal-select-wrap">
-                    <select id="room-language" defaultValue="Python">
-                      <option>Python</option>
-                      <option>JavaScript</option>
-                      <option>C++</option>
-                      <option>Java</option>
+                    <select id="room-language" name="language" value={createForm.language} onChange={handleCreateInputChange}>
+                      {roomLanguageOptions.map((language) => (
+                        <option key={language} value={language}>
+                          {language}
+                        </option>
+                      ))}
                     </select>
                     <ChevronDown size={16} />
                   </div>
@@ -367,8 +578,13 @@ const Dashboard = () => {
                   </div>
                   <button
                     type="button"
-                    className={`toggle-switch ${isPrivateRoom ? "is-on" : ""}`}
-                    onClick={() => setIsPrivateRoom((prev) => !prev)}
+                    className={`toggle-switch ${createForm.isPrivate ? "is-on" : ""}`}
+                    onClick={() =>
+                      setCreateForm((prev) => ({
+                        ...prev,
+                        isPrivate: !prev.isPrivate,
+                      }))
+                    }
                     aria-label="Toggle room privacy"
                   >
                     <span className="toggle-knob" />
@@ -377,32 +593,41 @@ const Dashboard = () => {
 
                 <div className="room-field">
                   <label htmlFor="invite-email">Invite by Email (optional)</label>
-                  <input id="invite-email" type="text" placeholder="Enter email and press Enter" />
-                  <div className="email-tag-list">
-                    <span className="email-tag">
-                      ahmed@gmail.com
-                      <button type="button" aria-label="Remove ahmed@gmail.com">
-                        <X size={12} />
-                      </button>
-                    </span>
-                    <span className="email-tag">
-                      sara@gmail.com
-                      <button type="button" aria-label="Remove sara@gmail.com">
-                        <X size={12} />
-                      </button>
-                    </span>
-                  </div>
+                  <input
+                    id="invite-email"
+                    name="inviteEmail"
+                    type="text"
+                    placeholder="Enter one email address"
+                    value={createForm.inviteEmail}
+                    onChange={handleCreateInputChange}
+                  />
                 </div>
 
-                <button type="button" className="btn btn-filled room-modal-submit">
-                  Create Room
+                <button
+                  type="button"
+                  className="btn btn-filled room-modal-submit"
+                  onClick={handleCreateRoom}
+                  disabled={isCreatingRoom}
+                >
+                  {isCreatingRoom ? "Creating Room..." : "Create Room"}
                 </button>
               </div>
             ) : (
               <div className="room-modal-content">
+                {joinRoomError ? <p className="form-server-error">{joinRoomError}</p> : null}
+
                 <div className="room-field">
                   <label htmlFor="room-code">Room Code or Invite Link</label>
-                  <input id="room-code" type="text" placeholder="Paste your invite link or room code here" />
+                  <input
+                    id="room-code"
+                    type="text"
+                    placeholder="Paste your invite link or room code here"
+                    value={joinInput}
+                    onChange={(event) => {
+                      setJoinInput(event.target.value);
+                      setJoinRoomError("");
+                    }}
+                  />
                   <small>Ask your collaborator to share their room invite link</small>
                 </div>
 
@@ -412,21 +637,37 @@ const Dashboard = () => {
 
                 <div className="recent-rooms">
                   <h3>Recently Visited Rooms</h3>
-                  {recentRooms.map((room) => (
-                    <div className="recent-room-row" key={room.id}>
-                      <div>
-                        <p>{room.name}</p>
-                        <span className={`lang-badge ${badgeClassMap[room.language] || "badge-python"}`}>
-                          {room.language}
-                        </span>
-                      </div>
-                      <button type="button">Join</button>
-                    </div>
-                  ))}
+                  {isRecentRoomsLoading ? <p className="form-server-error">Loading recent rooms...</p> : null}
+                  {recentRoomsError ? <p className="form-server-error">{recentRoomsError}</p> : null}
+
+                  {!isRecentRoomsLoading && !recentRoomsError && recentRooms.length === 0 ? (
+                    <p className="form-server-error">No recent rooms found.</p>
+                  ) : null}
+
+                  {!isRecentRoomsLoading && !recentRoomsError
+                    ? recentRooms.map((room) => (
+                        <div className="recent-room-row" key={room._id}>
+                          <div>
+                            <p>{room.name}</p>
+                            <span className={`lang-badge ${badgeClassMap[room.language] || "badge-python"}`}>
+                              {room.language}
+                            </span>
+                          </div>
+                          <button type="button" onClick={() => handleJoinRecentRoom(room._id)} disabled={isJoiningRoom}>
+                            Join
+                          </button>
+                        </div>
+                      ))
+                    : null}
                 </div>
 
-                <button type="button" className="btn btn-filled room-modal-submit">
-                  Join Room
+                <button
+                  type="button"
+                  className="btn btn-filled room-modal-submit"
+                  onClick={handleJoinByInvite}
+                  disabled={isJoiningRoom}
+                >
+                  {isJoiningRoom ? "Joining Room..." : "Join Room"}
                 </button>
               </div>
             )}

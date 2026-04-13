@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { registerRequest } from "../services/authApi";
-import { ArrowLeftRight, Eye, EyeOff } from "lucide-react";
+import { ArrowLeft, ArrowLeftRight, Eye, EyeOff } from "lucide-react";
 
 const Register = () => {
   const navigate = useNavigate();
@@ -85,6 +85,11 @@ const Register = () => {
 
   return (
     <div className="auth-page">
+      <button type="button" className="auth-back-btn" onClick={() => navigate("/")}>
+        <ArrowLeft size={16} aria-hidden="true" />
+        <span>Back</span>
+      </button>
+
       <div className="auth-page-logo auth-logo">
         <ArrowLeftRight size={20} aria-hidden="true" />
         <h2>SynCode</h2>

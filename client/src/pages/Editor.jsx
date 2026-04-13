@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import MonacoEditor from "@monaco-editor/react";
 import {
   ArrowLeftRight,
   ChevronDown,
@@ -17,39 +18,30 @@ import {
 
 const openTabs = ["main.py", "utils.py"];
 
-const codeLines = [
-  "import os",
-  "import datetime  # standard lib",
-  "",
-  "def sync_repository(repo_path: str):",
-  "    print(f\"Initializing SynCode at {repo_path}...\")",
-  "    timestamp = datetime.datetime.now()",
-  "    try:",
-  "        files = os.listdir(repo_path)",
-  "        for file_name in files:",
-  "            if file_name.endswith('.py'):",
-  "                process_file(file_name)",
-  "    except Exception as error:",
-  "        print(f\"Error: {error}\")",
-  "",
-  "# Main execution entry",
-  "if __name__ == '__main__':",
-  "    path = './src'",
-  "    sync_repository(path)",
-  "    print('Process completed successfully.')",
-  "",
-  "# TODO: add git hooks integration",
-  "def validate_config():",
-  "    return 'valid'",
-  "",
-];
+const initialCode = `import os
+import datetime  # standard lib
 
-const collaboratorCursors = [
-  { name: "Ahmed", colorClass: "cursor-red", top: 167, left: 410 },
-  { name: "Sara", colorClass: "cursor-yellow", top: 349, left: 330 },
-  { name: "John", colorClass: "cursor-green", top: 427, left: 304 },
-  { name: "You", colorClass: "cursor-blue", top: 453, left: 242 },
-];
+def sync_repository(repo_path: str):
+  print(f"Initializing SynCode at {repo_path}...")
+  timestamp = datetime.datetime.now()
+  try:
+    files = os.listdir(repo_path)
+    for file_name in files:
+      if file_name.endswith('.py'):
+        process_file(file_name)
+  except Exception as error:
+    print(f"Error: {error}")
+
+# Main execution entry
+if __name__ == '__main__':
+  path = './src'
+  sync_repository(path)
+  print('Process completed successfully.')
+
+# TODO: add git hooks integration
+def validate_config():
+  return 'valid'
+`;
 
 const collaborators = [
   { name: "Ahmed", status: "Editing main.py:12", tone: "tone-b", online: true },
@@ -80,6 +72,8 @@ const Editor = () => {
   const [activeBottomTab, setActiveBottomTab] = useState("output");
   const [roomName, setRoomName] = useState("My Python Project");
   const [isEditingName, setIsEditingName] = useState(false);
+  const [activeFile, setActiveFile] = useState(openTabs[0]);
+  const [editorCode, setEditorCode] = useState(initialCode);
   const [terminalLines, setTerminalLines] = useState(outputLinesSeed);
 
   const activeCollab = useMemo(() => collaborators.filter((user) => user.online).length, []);
@@ -199,35 +193,38 @@ const Editor = () => {
           </button>
 
           <div className="editor-tabbar">
-            <button type="button" className="editor-tab active">main.py</button>
-            <button type="button" className="editor-tab">utils.py</button>
+            {openTabs.map((tab) => (
+              <button
+                type="button"
+                key={tab}
+                className={`editor-tab${activeFile === tab ? " active" : ""}`}
+                onClick={() => setActiveFile(tab)}
+              >
+                {tab}
+              </button>
+            ))}
             <button type="button" className="editor-tab add" aria-label="New tab">
               <Plus size={14} />
             </button>
           </div>
 
           <div className="code-canvas">
-            <div className="code-scroll-area">
-              <div className="code-block">
-                <ol className="line-numbers" aria-hidden="true">
-                  {codeLines.map((_, index) => (
-                    <li key={`ln-${index + 1}`}>{index + 1}</li>
-                  ))}
-                </ol>
-
-                <pre className="code-pre">
-                  {codeLines.map((line, index) => (
-                    <code key={`code-${index + 1}`}>{line || " "}{"\n"}</code>
-                  ))}
-                </pre>
-
-                {collaboratorCursors.map((cursor) => (
-                  <div key={cursor.name} className={`collab-cursor ${cursor.colorClass}`} style={{ top: cursor.top, left: cursor.left }}>
-                    <span>{cursor.name}</span>
-                    <i />
-                  </div>
-                ))}
-              </div>
+            <div className="monaco-wrapper">
+              <MonacoEditor
+                height="100%"
+                language="python"
+                theme="vs-dark"
+                value={editorCode}
+                onChange={(nextValue) => setEditorCode(nextValue || "")}
+                options={{
+                  fontFamily: "JetBrains Mono, Consolas, Monaco, monospace",
+                  fontSize: 14,
+                  minimap: { enabled: false },
+                  scrollBeyondLastLine: false,
+                  automaticLayout: true,
+                  tabSize: 4,
+                }}
+              />
             </div>
           </div>
 
