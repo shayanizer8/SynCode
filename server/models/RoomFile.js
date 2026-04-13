@@ -1,14 +1,14 @@
 const mongoose = require("mongoose");
 
-const roomSchema = new mongoose.Schema(
+const roomFileSchema = new mongoose.Schema(
   {
-    ownerId: {
+    roomId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
+      ref: "Room",
       required: true,
       index: true,
     },
-    name: {
+    path: {
       type: String,
       required: true,
       trim: true,
@@ -19,17 +19,9 @@ const roomSchema = new mongoose.Schema(
       trim: true,
       default: "Python",
     },
-    isPrivate: {
-      type: Boolean,
-      default: true,
-    },
-    inviteCode: {
+    content: {
       type: String,
-      required: true,
-      unique: true,
-      uppercase: true,
-      trim: true,
-      index: true,
+      default: "",
     },
   },
   {
@@ -37,4 +29,6 @@ const roomSchema = new mongoose.Schema(
   }
 );
 
-module.exports = mongoose.model("Room", roomSchema);
+roomFileSchema.index({ roomId: 1, path: 1 }, { unique: true });
+
+module.exports = mongoose.model("RoomFile", roomFileSchema);
