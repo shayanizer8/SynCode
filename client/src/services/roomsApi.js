@@ -15,3 +15,35 @@ export const getRoomsRequest = (token) =>
       Authorization: `Bearer ${token}`,
     },
   });
+
+export const getRecentRoomsRequest = (token) =>
+  roomsClient.get("/recent", {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+export const createRoomRequest = (token, payload) =>
+  roomsClient.post("/", payload, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+export const joinRoomByInviteRequest = (token, payload) =>
+  roomsClient.post("/join", payload, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+export const joinRoomByIdRequest = (token, roomId) =>
+  roomsClient.post(
+    `/join/${roomId}`,
+    {},
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    }
+  );
