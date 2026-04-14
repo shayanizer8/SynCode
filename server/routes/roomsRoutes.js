@@ -3,6 +3,9 @@ const {
 	createRoom,
 	getUserRooms,
 	getRecentRooms,
+	getRoomMetadata,
+	getRoomContent,
+	updateRoomContent,
 	joinRoomByInvite,
 	joinRoomById,
 } = require("../controllers/roomsController");
@@ -12,6 +15,9 @@ const router = express.Router();
 
 router.get("/", protect, getUserRooms);
 router.get("/recent", protect, getRecentRooms);
+router.get("/:roomId", protect, getRoomMetadata);
+router.get("/:roomId/content", protect, getRoomContent);
+router.put("/:roomId/content", protect, updateRoomContent);
 router.post("/", protect, createRoom);
 router.post("/join", protect, joinRoomByInvite);
 router.post("/join/:roomId", protect, joinRoomById);
