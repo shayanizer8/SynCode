@@ -61,7 +61,14 @@ function App() {
             </ProtectedRoute>
           }
         />
-        <Route path="/editor" element={<Editor />} />
+        <Route
+          path="/editor/:roomId"
+          element={
+            <ProtectedRoute>
+              <Editor />
+            </ProtectedRoute>
+          }
+        />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

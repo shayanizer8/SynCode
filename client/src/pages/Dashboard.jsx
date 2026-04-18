@@ -175,7 +175,7 @@ const Dashboard = () => {
     () =>
       rooms.map((room) => ({
         ...room,
-        id: room._id || room.id,
+        id: String(room.id || room._id || ""),
         edited: getRelativeEditedLabel(room.updatedAt),
         collaborators: Array.isArray(room.collaborators) ? room.collaborators : [],
       })),
@@ -234,8 +234,9 @@ const Dashboard = () => {
       });
 
       const createdRoom = response.data?.room;
+      const createdRoomId = createdRoom?.id || createdRoom?._id;
 
-      if (!createdRoom?._id) {
+      if (!createdRoomId) {
         setCreateRoomError("Room could not be created. Please try again.");
         return;
       }
@@ -243,7 +244,7 @@ const Dashboard = () => {
       await refreshRooms();
       setCreateForm(initialCreateFormState);
       setIsRoomModalOpen(false);
-      navigate(`/editor?roomId=${createdRoom._id}`);
+      navigate(`/editor/${createdRoomId}`);
     } catch (error) {
       const status = error.response?.status;
 
@@ -282,8 +283,9 @@ const Dashboard = () => {
       });
 
       const joinedRoom = response.data?.room;
+      const joinedRoomId = joinedRoom?.id || joinedRoom?._id;
 
-      if (!joinedRoom?._id) {
+      if (!joinedRoomId) {
         setJoinRoomError("Unable to join room. Please try again.");
         return;
       }
@@ -291,7 +293,7 @@ const Dashboard = () => {
       await refreshRooms();
       setJoinInput("");
       setIsRoomModalOpen(false);
-      navigate(`/editor?roomId=${joinedRoom._id}`);
+      navigate(`/editor/${joinedRoomId}`);
     } catch (error) {
       const status = error.response?.status;
 
@@ -322,7 +324,7 @@ const Dashboard = () => {
       await joinRoomByIdRequest(token, roomId);
       await refreshRooms();
       setIsRoomModalOpen(false);
-      navigate(`/editor?roomId=${roomId}`);
+      navigate(`/editor/${roomId}`);
     } catch (error) {
       const status = error.response?.status;
 
@@ -473,7 +475,7 @@ const Dashboard = () => {
                       ))}
                     </div>
 
-                    <Link to={`/editor?roomId=${room.id}`} className="room-open-btn">
+                    <Link to={`/editor/${room.id}`} className="room-open-btn">
                       Open Room
                       <ArrowRight size={14} />
                     </Link>
