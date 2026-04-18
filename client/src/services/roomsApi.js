@@ -47,3 +47,24 @@ export const joinRoomByIdRequest = (token, roomId) =>
       },
     }
   );
+
+export const getRoomMetadataRequest = (token, roomId) =>
+  roomsClient.get(`/${roomId}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+export const getRoomContentRequest = (token, roomId) =>
+  roomsClient.get(`/${roomId}/content`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+export const updateRoomContentRequest = (token, roomId, payload) =>
+  roomsClient.put(`/${roomId}/content`, payload, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });

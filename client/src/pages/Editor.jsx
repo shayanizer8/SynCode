@@ -1,5 +1,11 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import MonacoEditor from "@monaco-editor/react";
+import { useNavigate, useParams } from "react-router-dom";
+import {
+  getRoomContentRequest,
+  getRoomMetadataRequest,
+  updateRoomContentRequest,
+} from "../services/roomsApi";
 import {
   ArrowLeftRight,
   ChevronDown,
@@ -12,36 +18,32 @@ import {
   LogOut,
   Play,
   Plus,
+  Save,
   SendHorizontal,
   Settings,
 } from "lucide-react";
 
-const openTabs = ["main.py", "utils.py"];
+const languageLabelMap = {
+  Python: "python",
+  JavaScript: "javascript",
+  Java: "java",
+  "C++": "cpp",
+};
 
-const initialCode = `import os
-import datetime  # standard lib
-
-def sync_repository(repo_path: str):
-  print(f"Initializing SynCode at {repo_path}...")
-  timestamp = datetime.datetime.now()
-  try:
-    files = os.listdir(repo_path)
-    for file_name in files:
-      if file_name.endswith('.py'):
-        process_file(file_name)
-  except Exception as error:
-    print(f"Error: {error}")
-
-# Main execution entry
-if __name__ == '__main__':
-  path = './src'
-  sync_repository(path)
-  print('Process completed successfully.')
-
-# TODO: add git hooks integration
-def validate_config():
-  return 'valid'
-`;
+const defaultFileByLanguage = {
+  Python: { path: "main.py", content: "print('Welcome to SynCode')\n" },
+  JavaScript: { path: "main.js", content: "console.log('Welcome to SynCode');\n" },
+  Java: {
+    path: "Main.java",
+    content:
+      "public class Main {\n    public static void main(String[] args) {\n        System.out.println(\"Welcome to SynCode\");\n    }\n}\n",
+  },
+  "C++": {
+    path: "main.cpp",
+    content:
+      "#include <iostream>\n\nint main() {\n    std::cout << \"Welcome to SynCode\" << std::endl;\n    return 0;\n}\n",
+  },
+};
 
 const collaborators = [
   { name: "Ahmed", status: "Editing main.py:12", tone: "tone-b", online: true },
@@ -67,16 +69,217 @@ const outputLinesSeed = [
 ];
 
 const Editor = () => {
+  const { roomId } = useParams();
+  const navigate = useNavigate();
+
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
   const [activeBottomTab, setActiveBottomTab] = useState("output");
   const [roomName, setRoomName] = useState("My Python Project");
   const [isEditingName, setIsEditingName] = useState(false);
-  const [activeFile, setActiveFile] = useState(openTabs[0]);
-  const [editorCode, setEditorCode] = useState(initialCode);
+  const [roomLanguage, setRoomLanguage] = useState("Python");
+  const [files, setFiles] = useState([]);
+  const [activeFile, setActiveFile] = useState("");
+  const [editorCode, setEditorCode] = useState("");
+  const [isLoadingRoom, setIsLoadingRoom] = useState(true);
+  const [roomLoadError, setRoomLoadError] = useState("");
+  const [isAccessDenied, setIsAccessDenied] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState("");
   const [terminalLines, setTerminalLines] = useState(outputLinesSeed);
 
   const activeCollab = useMemo(() => collaborators.filter((user) => user.online).length, []);
+
+  useEffect(() => {
+    const fetchRoomData = async () => {
+      const token = localStorage.getItem("token");
+
+      if (!token) {
+        navigate("/login", { replace: true });
+        return;
+      }
+
+      if (!roomId) {
+        setRoomLoadError("Room id is missing.");
+        setIsLoadingRoom(false);
+        return;
+      }
+
+      try {
+        setIsLoadingRoom(true);
+        setIsAccessDenied(false);
+        setRoomLoadError("");
+
+        const [metadataResponse, contentResponse] = await Promise.all([
+          getRoomMetadataRequest(token, roomId),
+          getRoomContentRequest(token, roomId),
+        ]);
+
+        const room = metadataResponse.data?.room;
+        const contentFiles = Array.isArray(contentResponse.data?.files) ? contentResponse.data.files : [];
+
+        if (!room?._id) {
+          setRoomLoadError("Room metadata is unavailable.");
+          return;
+        }
+
+        setRoomName(room.name || "Untitled Room");
+        setRoomLanguage(room.language || "Python");
+
+        const fallback = defaultFileByLanguage[room.language] || defaultFileByLanguage.Python;
+        const normalizedFiles =
+          contentFiles.length > 0
+            ? contentFiles.map((file) => ({
+                path: file.path,
+                language: file.language || room.language,
+                content: typeof file.content === "string" ? file.content : "",
+              }))
+            : [
+                {
+                  path: fallback.path,
+                  language: room.language || "Python",
+                  content: fallback.content,
+                },
+              ];
+
+        setFiles(normalizedFiles);
+        setActiveFile(normalizedFiles[0].path);
+        setEditorCode(normalizedFiles[0].content);
+      } catch (error) {
+        const status = error.response?.status;
+
+        if (status === 401) {
+          localStorage.removeItem("token");
+          navigate("/login", { replace: true });
+          return;
+        }
+
+        if (status === 403) {
+          setIsAccessDenied(true);
+          return;
+        }
+
+        if (status === 404) {
+          setRoomLoadError("Room not found.");
+          return;
+        }
+
+        const message = error.response?.data?.message || "Unable to load room data right now.";
+        setRoomLoadError(message);
+      } finally {
+        setIsLoadingRoom(false);
+      }
+    };
+
+    fetchRoomData();
+  }, [navigate, roomId]);
+
+  useEffect(() => {
+    if (!activeFile) {
+      return;
+    }
+
+    const nextFile = files.find((file) => file.path === activeFile);
+
+    if (nextFile) {
+      setEditorCode(nextFile.content);
+    }
+  }, [activeFile, files]);
+
+  const handleEditorChange = (nextValue) => {
+    const newContent = nextValue || "";
+    setEditorCode(newContent);
+    setSaveMessage("");
+
+    setFiles((prev) =>
+      prev.map((file) =>
+        file.path === activeFile
+          ? {
+              ...file,
+              content: newContent,
+            }
+          : file
+      )
+    );
+  };
+
+  const handleSave = async () => {
+    const token = localStorage.getItem("token");
+
+    if (!token) {
+      navigate("/login", { replace: true });
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+      setSaveMessage("");
+
+      await updateRoomContentRequest(token, roomId, {
+        files,
+      });
+
+      setSaveMessage("Saved");
+    } catch (error) {
+      const status = error.response?.status;
+
+      if (status === 401) {
+        localStorage.removeItem("token");
+        navigate("/login", { replace: true });
+        return;
+      }
+
+      if (status === 403) {
+        setIsAccessDenied(true);
+        return;
+      }
+
+      const message = error.response?.data?.message || "Unable to save room content.";
+      setSaveMessage(message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    navigate("/login", { replace: true });
+  };
+
+  if (isLoadingRoom) {
+    return (
+      <div className="editor-page editor-status-page">
+        <div className="editor-status-card">
+          <h2>Loading room...</h2>
+          <p>Please wait while SynCode prepares your editor.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (isAccessDenied) {
+    return (
+      <div className="editor-page editor-status-page">
+        <div className="editor-status-card">
+          <h2>Access denied (403)</h2>
+          <p>You are not a member of this room.</p>
+          <button type="button" className="editor-btn ghost" onClick={() => navigate("/dashboard")}>Back to Dashboard</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (roomLoadError) {
+    return (
+      <div className="editor-page editor-status-page">
+        <div className="editor-status-card">
+          <h2>Could not open room</h2>
+          <p>{roomLoadError}</p>
+          <button type="button" className="editor-btn ghost" onClick={() => navigate("/dashboard")}>Back to Dashboard</button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="editor-page">
@@ -110,7 +313,7 @@ const Editor = () => {
           </div>
 
           <button type="button" className="language-pill">
-            Python <ChevronDown size={13} />
+            {roomLanguage} <ChevronDown size={13} />
           </button>
         </div>
 
@@ -129,10 +332,14 @@ const Editor = () => {
             <Play size={12} />
             Run
           </button>
+          <button type="button" className="editor-btn ghost" onClick={handleSave} disabled={isSaving}>
+            <Save size={12} />
+            {isSaving ? "Saving..." : "Save"}
+          </button>
           <button type="button" className="editor-icon-btn" aria-label="Settings">
             <Settings size={16} />
           </button>
-          <button type="button" className="editor-icon-btn" aria-label="Logout">
+          <button type="button" className="editor-icon-btn" aria-label="Logout" onClick={handleLogout}>
             <LogOut size={16} />
           </button>
         </div>
@@ -153,22 +360,17 @@ const Editor = () => {
                 <Folder size={14} />
                 <span>src</span>
               </button>
-              <button type="button" className="file-row file-row-active">
-                <FileText size={14} />
-                <span>main.py</span>
-              </button>
-              <button type="button" className="file-row nested">
-                <FileText size={14} />
-                <span>utils.py</span>
-              </button>
-              <button type="button" className="file-row">
-                <FileText size={14} />
-                <span>requirements.txt</span>
-              </button>
-              <button type="button" className="file-row">
-                <FileText size={14} />
-                <span>README.md</span>
-              </button>
+              {files.map((file) => (
+                <button
+                  type="button"
+                  key={file.path}
+                  className={`file-row nested${activeFile === file.path ? " file-row-active" : ""}`}
+                  onClick={() => setActiveFile(file.path)}
+                >
+                  <FileText size={14} />
+                  <span>{file.path}</span>
+                </button>
+              ))}
             </div>
           </aside>
         ) : null}
@@ -193,14 +395,14 @@ const Editor = () => {
           </button>
 
           <div className="editor-tabbar">
-            {openTabs.map((tab) => (
+            {files.map((file) => (
               <button
                 type="button"
-                key={tab}
-                className={`editor-tab${activeFile === tab ? " active" : ""}`}
-                onClick={() => setActiveFile(tab)}
+                key={file.path}
+                className={`editor-tab${activeFile === file.path ? " active" : ""}`}
+                onClick={() => setActiveFile(file.path)}
               >
-                {tab}
+                {file.path}
               </button>
             ))}
             <button type="button" className="editor-tab add" aria-label="New tab">
@@ -212,10 +414,10 @@ const Editor = () => {
             <div className="monaco-wrapper">
               <MonacoEditor
                 height="100%"
-                language="python"
+                language={languageLabelMap[roomLanguage] || "plaintext"}
                 theme="vs-dark"
                 value={editorCode}
-                onChange={(nextValue) => setEditorCode(nextValue || "")}
+                onChange={handleEditorChange}
                 options={{
                   fontFamily: "JetBrains Mono, Consolas, Monaco, monospace",
                   fontSize: 14,
@@ -227,6 +429,8 @@ const Editor = () => {
               />
             </div>
           </div>
+
+          {saveMessage ? <p className="editor-save-message">{saveMessage}</p> : null}
 
           <div className="terminal-panel">
             <div className="terminal-topbar">

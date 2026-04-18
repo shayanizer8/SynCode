@@ -1651,6 +1651,40 @@ a {
   font-family: var(--mono);
 }
 
+.editor-status-page {
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+
+.editor-status-card {
+  width: min(480px, 100%);
+  border: 1px solid #30363d;
+  background: #161b22;
+  border-radius: 12px;
+  padding: 24px;
+  text-align: center;
+}
+
+.editor-status-card h2 {
+  margin: 0 0 10px;
+  font-size: 1.35rem;
+}
+
+.editor-status-card p {
+  margin: 0 0 18px;
+  color: #9fb0c7;
+}
+
+.editor-save-message {
+  margin: 0;
+  padding: 5px 12px;
+  border-top: 1px solid #263142;
+  color: #8fc9ff;
+  font-size: 0.76rem;
+  background: #101823;
+}
+
 .editor-topbar {
   height: 48px;
   border-bottom: 1px solid #30363d;
