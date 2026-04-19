@@ -359,6 +359,15 @@ const updateRoomContent = async (req, res) => {
       return res.status(400).json({ message: "No valid files to save" });
     }
 
+    const incomingPaths = sanitizedFiles.map((file) => file.path);
+
+    // PUT semantics: payload is the complete room file set.
+    // Remove files that are no longer present (e.g. after rename/delete).
+    await RoomFile.deleteMany({
+      roomId: room._id,
+      path: { $nin: incomingPaths },
+    });
+
     await Promise.all(
       sanitizedFiles.map((file) =>
         RoomFile.findOneAndUpdate(
