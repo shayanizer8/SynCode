@@ -11,7 +11,6 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  Circle,
   Edit3,
   FileText,
   Folder,
@@ -21,11 +20,19 @@ import {
   Save,
   SendHorizontal,
   Settings,
+  Trash2,
 } from "lucide-react";
 
 const languageLabelMap = {
   Python: "python",
   JavaScript: "javascript",
+  Java: "java",
+  "C++": "cpp",
+};
+
+const fileExtensionMap = {
+  Python: "py",
+  JavaScript: "js",
   Java: "java",
   "C++": "cpp",
 };
@@ -68,6 +75,18 @@ const outputLinesSeed = [
   { text: "Process completed successfully.", type: "success" },
 ];
 
+const normalizeFilesForCompare = (fileList) =>
+  [...fileList]
+    .map((file) => ({
+      path: file.path,
+      language: file.language,
+      content: file.content,
+    }))
+    .sort((a, b) => a.path.localeCompare(b.path));
+
+const areFileSetsEqual = (leftFiles, rightFiles) =>
+  JSON.stringify(normalizeFilesForCompare(leftFiles)) === JSON.stringify(normalizeFilesForCompare(rightFiles));
+
 const Editor = () => {
   const { roomId } = useParams();
   const navigate = useNavigate();
@@ -79,6 +98,7 @@ const Editor = () => {
   const [isEditingName, setIsEditingName] = useState(false);
   const [roomLanguage, setRoomLanguage] = useState("Python");
   const [files, setFiles] = useState([]);
+  const [savedFiles, setSavedFiles] = useState([]);
   const [activeFile, setActiveFile] = useState("");
   const [editorCode, setEditorCode] = useState("");
   const [isLoadingRoom, setIsLoadingRoom] = useState(true);
@@ -86,9 +106,16 @@ const Editor = () => {
   const [isAccessDenied, setIsAccessDenied] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
+  const [isExitConfirmOpen, setIsExitConfirmOpen] = useState(false);
+  const [fileActionModal, setFileActionModal] = useState({
+    mode: "",
+    filePath: "",
+    nextPath: "",
+  });
   const [terminalLines, setTerminalLines] = useState(outputLinesSeed);
 
   const activeCollab = useMemo(() => collaborators.filter((user) => user.online).length, []);
+  const hasUnsavedChanges = useMemo(() => !areFileSetsEqual(files, savedFiles), [files, savedFiles]);
 
   useEffect(() => {
     const fetchRoomData = async () => {
@@ -143,6 +170,7 @@ const Editor = () => {
               ];
 
         setFiles(normalizedFiles);
+        setSavedFiles(normalizedFiles);
         setActiveFile(normalizedFiles[0].path);
         setEditorCode(normalizedFiles[0].content);
       } catch (error) {
@@ -186,6 +214,23 @@ const Editor = () => {
     }
   }, [activeFile, files]);
 
+  useEffect(() => {
+    const handleBeforeUnload = (event) => {
+      if (!hasUnsavedChanges) {
+        return;
+      }
+
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [hasUnsavedChanges]);
+
   const handleEditorChange = (nextValue) => {
     const newContent = nextValue || "";
     setEditorCode(newContent);
@@ -219,6 +264,7 @@ const Editor = () => {
         files,
       });
 
+      setSavedFiles(files);
       setSaveMessage("Saved");
     } catch (error) {
       const status = error.response?.status;
@@ -241,9 +287,142 @@ const Editor = () => {
     }
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem("token");
-    navigate("/login", { replace: true });
+  const getUniqueFileName = () => {
+    const extension = fileExtensionMap[roomLanguage] || "txt";
+    const existingPaths = new Set(files.map((file) => file.path));
+
+    for (let index = 1; index <= 999; index += 1) {
+      const candidate = `untitled-${index}.${extension}`;
+
+      if (!existingPaths.has(candidate)) {
+        return candidate;
+      }
+    }
+
+    return `untitled-${Date.now()}.${extension}`;
+  };
+
+  const handleCreateFile = () => {
+    const newFile = {
+      path: getUniqueFileName(),
+      language: roomLanguage,
+      content: "",
+    };
+
+    const nextDraftFiles = [...files, newFile];
+
+    setFiles(nextDraftFiles);
+    setActiveFile(newFile.path);
+    setEditorCode(newFile.content);
+    setSaveMessage(`Created ${newFile.path}. Click Save to persist.`);
+  };
+
+  const openRenameFileModal = (filePath) => {
+    setFileActionModal({
+      mode: "rename",
+      filePath,
+      nextPath: filePath,
+    });
+  };
+
+  const openDeleteFileModal = (filePath) => {
+    setFileActionModal({
+      mode: "delete",
+      filePath,
+      nextPath: "",
+    });
+  };
+
+  const closeFileActionModal = () => {
+    setFileActionModal({
+      mode: "",
+      filePath: "",
+      nextPath: "",
+    });
+  };
+
+  const handleConfirmRenameFile = () => {
+    const filePath = fileActionModal.filePath;
+    const targetFile = files.find((file) => file.path === filePath);
+
+    if (!targetFile) {
+      closeFileActionModal();
+      return;
+    }
+
+    const newPath = fileActionModal.nextPath.trim();
+
+    if (!newPath) {
+      setSaveMessage("File name cannot be empty.");
+      return;
+    }
+
+    if (newPath === targetFile.path) {
+      return;
+    }
+
+    const alreadyExists = files.some((file) => file.path === newPath);
+
+    if (alreadyExists) {
+      setSaveMessage("A file with this name already exists.");
+      return;
+    }
+
+    const nextDraftFiles = files.map((file) =>
+      file.path === targetFile.path
+        ? {
+            ...file,
+            path: newPath,
+          }
+        : file
+    );
+
+    setFiles(nextDraftFiles);
+    closeFileActionModal();
+    setSaveMessage(`Renamed to ${newPath}. Click Save to persist.`);
+
+    if (activeFile === targetFile.path) {
+      setActiveFile(newPath);
+    }
+  };
+
+  const handleConfirmDeleteFile = () => {
+    const filePath = fileActionModal.filePath;
+
+    if (files.length <= 1) {
+      setSaveMessage("At least one file is required in the room.");
+      closeFileActionModal();
+      return;
+    }
+
+    const nextDraftFiles = files.filter((file) => file.path !== filePath);
+
+    setFiles(nextDraftFiles);
+    closeFileActionModal();
+    setSaveMessage(`Deleted ${filePath}. Click Save to persist.`);
+
+    if (activeFile === filePath && nextDraftFiles.length > 0) {
+      setActiveFile(nextDraftFiles[0].path);
+      setEditorCode(nextDraftFiles[0].content);
+    }
+  };
+
+  const handleAttemptExit = () => {
+    if (hasUnsavedChanges) {
+      setIsExitConfirmOpen(true);
+      return;
+    }
+
+    navigate("/dashboard");
+  };
+
+  const closeExitConfirm = () => {
+    setIsExitConfirmOpen(false);
+  };
+
+  const confirmExitWithoutSaving = () => {
+    setIsExitConfirmOpen(false);
+    navigate("/dashboard");
   };
 
   if (isLoadingRoom) {
@@ -339,7 +518,7 @@ const Editor = () => {
           <button type="button" className="editor-icon-btn" aria-label="Settings">
             <Settings size={16} />
           </button>
-          <button type="button" className="editor-icon-btn" aria-label="Logout" onClick={handleLogout}>
+          <button type="button" className="editor-icon-btn" aria-label="Back to dashboard" onClick={handleAttemptExit}>
             <LogOut size={16} />
           </button>
         </div>
@@ -350,8 +529,13 @@ const Editor = () => {
           <aside className="explorer-panel">
             <div className="panel-title-row">
               <p>Explorer</p>
-              <button type="button" className="panel-mini-btn" aria-label="New file">
-                <Plus size={14} />
+              <button
+                type="button"
+                className="panel-mini-btn"
+                aria-label="Collapse explorer"
+                onClick={() => setLeftCollapsed(true)}
+              >
+                <ChevronLeft size={14} />
               </button>
             </div>
 
@@ -361,29 +545,49 @@ const Editor = () => {
                 <span>src</span>
               </button>
               {files.map((file) => (
-                <button
-                  type="button"
-                  key={file.path}
-                  className={`file-row nested${activeFile === file.path ? " file-row-active" : ""}`}
-                  onClick={() => setActiveFile(file.path)}
-                >
-                  <FileText size={14} />
-                  <span>{file.path}</span>
-                </button>
+                <div key={file.path} className={`file-row nested${activeFile === file.path ? " file-row-active" : ""}`}>
+                  <button type="button" className="file-open-btn" onClick={() => setActiveFile(file.path)}>
+                    <FileText size={14} />
+                    <span>{file.path}</span>
+                  </button>
+
+                  <div className="file-row-actions">
+                    <button
+                      type="button"
+                      className="file-action-btn"
+                      aria-label={`Rename ${file.path}`}
+                      onClick={() => openRenameFileModal(file.path)}
+                      disabled={isSaving}
+                    >
+                      <Edit3 size={12} />
+                    </button>
+                    <button
+                      type="button"
+                      className="file-action-btn delete"
+                      aria-label={`Delete ${file.path}`}
+                      onClick={() => openDeleteFileModal(file.path)}
+                      disabled={isSaving}
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                </div>
               ))}
             </div>
           </aside>
         ) : null}
 
         <section className="editor-center-panel">
-          <button
-            type="button"
-            className="panel-toggle-btn left"
-            onClick={() => setLeftCollapsed((prev) => !prev)}
-            aria-label={leftCollapsed ? "Expand explorer" : "Collapse explorer"}
-          >
-            {leftCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
-          </button>
+          {leftCollapsed ? (
+            <button
+              type="button"
+              className="explorer-expand-btn"
+              onClick={() => setLeftCollapsed(false)}
+              aria-label="Expand explorer"
+            >
+              <ChevronRight size={14} />
+            </button>
+          ) : null}
 
           <button
             type="button"
@@ -405,7 +609,13 @@ const Editor = () => {
                 {file.path}
               </button>
             ))}
-            <button type="button" className="editor-tab add" aria-label="New tab">
+            <button
+              type="button"
+              className="editor-tab add"
+              aria-label="New file"
+              onClick={handleCreateFile}
+              disabled={isSaving}
+            >
               <Plus size={14} />
             </button>
           </div>
@@ -517,6 +727,75 @@ const Editor = () => {
           </aside>
         ) : null}
       </div>
+
+      {fileActionModal.mode ? (
+        <div className="editor-modal-overlay" onClick={closeFileActionModal} role="presentation">
+          <section className="editor-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+            {fileActionModal.mode === "rename" ? (
+              <>
+                <h3>Rename File</h3>
+                <p>Choose a new file name for this room.</p>
+                <input
+                  type="text"
+                  className="editor-modal-input"
+                  value={fileActionModal.nextPath}
+                  onChange={(event) =>
+                    setFileActionModal((prev) => ({
+                      ...prev,
+                      nextPath: event.target.value,
+                    }))
+                  }
+                  placeholder="e.g. main.py"
+                  autoFocus
+                />
+                <div className="editor-modal-actions">
+                  <button type="button" className="editor-btn ghost" onClick={closeFileActionModal}>
+                    Cancel
+                  </button>
+                  <button type="button" className="editor-btn run" onClick={handleConfirmRenameFile} disabled={isSaving}>
+                    {isSaving ? "Renaming..." : "Rename"}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h3>Delete File</h3>
+                <p>Are you sure you want to delete {fileActionModal.filePath}?</p>
+                <div className="editor-modal-actions">
+                  <button type="button" className="editor-btn ghost" onClick={closeFileActionModal}>
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="editor-btn run editor-danger-btn"
+                    onClick={handleConfirmDeleteFile}
+                    disabled={isSaving}
+                  >
+                    {isSaving ? "Deleting..." : "Delete"}
+                  </button>
+                </div>
+              </>
+            )}
+          </section>
+        </div>
+      ) : null}
+
+      {isExitConfirmOpen ? (
+        <div className="editor-modal-overlay" onClick={closeExitConfirm} role="presentation">
+          <section className="editor-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+            <h3>Unsaved changes</h3>
+            <p>You are leaving this room without saving your latest changes.</p>
+            <div className="editor-modal-actions">
+              <button type="button" className="editor-btn ghost" onClick={closeExitConfirm}>
+                Stay
+              </button>
+              <button type="button" className="editor-btn run editor-danger-btn" onClick={confirmExitWithoutSaving}>
+                Leave Without Saving
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 };

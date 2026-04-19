@@ -1685,6 +1685,70 @@ a {
   background: #101823;
 }
 
+.editor-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  display: grid;
+  place-items: center;
+  z-index: 60;
+  padding: 16px;
+}
+
+.editor-modal {
+  width: min(420px, 100%);
+  border-radius: 12px;
+  border: 1px solid #30363d;
+  background: #161b22;
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.45);
+  padding: 18px;
+}
+
+.editor-modal h3 {
+  margin: 0 0 8px;
+  font-size: 1.1rem;
+}
+
+.editor-modal p {
+  margin: 0 0 14px;
+  color: #9cb0c8;
+  line-height: 1.45;
+}
+
+.editor-modal-input {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  background: #0d1117;
+  color: #e6edf3;
+  font-family: var(--mono);
+  font-size: 0.84rem;
+  padding: 0 12px;
+  margin-bottom: 14px;
+}
+
+.editor-modal-input:focus {
+  outline: none;
+  border-color: #2f81f7;
+}
+
+.editor-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.editor-danger-btn {
+  background: #d14343 !important;
+  border-color: #d14343 !important;
+}
+
+.editor-danger-btn:hover {
+  background: #e55959 !important;
+  border-color: #e55959 !important;
+}
+
 .editor-topbar {
   height: 48px;
   border-bottom: 1px solid #30363d;
@@ -1924,6 +1988,57 @@ a {
   font-size: 0.8rem;
 }
 
+.file-open-btn {
+  border: none;
+  background: transparent;
+  color: inherit;
+  min-height: 28px;
+  padding: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: inherit;
+  font-size: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.file-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.16s ease;
+}
+
+.file-row:hover .file-row-actions,
+.file-row.file-row-active .file-row-actions {
+  opacity: 1;
+}
+
+.file-action-btn {
+  border: none;
+  background: transparent;
+  color: #8f9aac;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.file-action-btn:hover {
+  background: #2a3340;
+  color: #dbe3ec;
+}
+
+.file-action-btn.delete:hover {
+  background: rgba(248, 81, 73, 0.2);
+  color: #fca5a0;
+}
+
 .file-row.nested {
   padding-left: 28px;
 }
@@ -1950,6 +2065,28 @@ a {
   display: grid;
   grid-template-rows: 38px minmax(0, 1fr) 180px;
   position: relative;
+}
+
+.explorer-expand-btn {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  transform: translateY(-50%);
+  z-index: 4;
+  width: 22px;
+  height: 38px;
+  border: 1px solid #30363d;
+  border-left: none;
+  border-radius: 0 8px 8px 0;
+  background: #161b22;
+  color: #9ba8bb;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.explorer-expand-btn:hover {
+  color: #d2dbe6;
 }
 
 .panel-toggle-btn {
