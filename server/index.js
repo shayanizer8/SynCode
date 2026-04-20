@@ -6,6 +6,7 @@ const connectDB = require("./config/db");
 const testRoutes = require("./routes/testRoutes");
 const authRoutes = require("./routes/authRoutes");
 const roomsRoutes = require("./routes/roomsRoutes");
+const executionRoutes = require("./routes/executionRoutes");
 
 dotenv.config();
 
@@ -18,6 +19,7 @@ app.use(express.json());
 app.use("/api", testRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/rooms", roomsRoutes);
+app.use("/api/execute", executionRoutes);
 
 const startServer = async () => {
   try {
