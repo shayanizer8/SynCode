@@ -2062,9 +2062,10 @@ a {
 .editor-center-panel {
   flex: 1;
   min-width: 0;
-  display: grid;
-  grid-template-rows: 38px minmax(0, 1fr) 180px;
+  display: flex;
+  flex-direction: column;
   position: relative;
+  min-height: 0;
 }
 
 .explorer-expand-btn {
@@ -2155,6 +2156,8 @@ a {
   position: relative;
   background: #0d1117;
   overflow: hidden;
+  flex: 1;
+  min-height: 0;
 }
 
 .monaco-wrapper {
@@ -2272,7 +2275,19 @@ a {
   background: #0a0a0a;
   border-top: 1px solid #30363d;
   display: grid;
-  grid-template-rows: 34px minmax(0, 1fr);
+  grid-template-rows: 34px auto minmax(0, 1fr);
+  position: relative;
+  min-height: 150px;
+}
+
+.terminal-resizer {
+  position: absolute;
+  top: -4px;
+  left: 0;
+  right: 0;
+  height: 8px;
+  cursor: ns-resize;
+  z-index: 3;
 }
 
 .terminal-topbar {
@@ -2315,9 +2330,63 @@ a {
   cursor: pointer;
 }
 
+.terminal-input-wrap {
+  display: grid;
+  gap: 6px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #1d2735;
+}
+
+.terminal-input-label {
+  color: #9aa4b4;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+}
+
+.terminal-stdin-input {
+  width: 100%;
+  resize: vertical;
+  min-height: 44px;
+  max-height: 120px;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  background: #0f141b;
+  color: #f0f6fc;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  line-height: 1.4;
+  padding: 6px 8px;
+}
+
+.terminal-stdin-input:focus {
+  outline: 1px solid #58a6ff;
+  border-color: #58a6ff;
+}
+
 .terminal-body {
   overflow: auto;
   padding: 10px 12px;
+  min-height: 0;
+  scrollbar-width: thin;
+  scrollbar-color: #2a3a4f #0f141b;
+}
+
+.terminal-body::-webkit-scrollbar {
+  width: 10px;
+}
+
+.terminal-body::-webkit-scrollbar-track {
+  background: #0f141b;
+}
+
+.terminal-body::-webkit-scrollbar-thumb {
+  background: #2a3a4f;
+  border-radius: 999px;
+  border: 2px solid #0f141b;
+}
+
+.terminal-body::-webkit-scrollbar-thumb:hover {
+  background: #3a4f6c;
 }
 
 .term-line {

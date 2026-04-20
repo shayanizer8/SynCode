@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import MonacoEditor from "@monaco-editor/react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
+  executeCodeRequest,
   getRoomContentRequest,
   getRoomMetadataRequest,
   updateRoomContentRequest,
@@ -67,14 +68,6 @@ const chatMessages = [
   { id: 5, from: "You", at: "10:38", text: "Added and pushed to main.py.", mine: true, tone: "tone-a" },
 ];
 
-const outputLinesSeed = [
-  { text: "[14:30:22] Starting execution of 'main.py'...", type: "muted" },
-  { text: "Initializing SynCode at ./src...", type: "muted" },
-  { text: "Processing file: utils.py... [DONE]", type: "success" },
-  { text: "ERROR: ConfigNotFound: Missing .codesync.yaml at project root", type: "error" },
-  { text: "Process completed successfully.", type: "success" },
-];
-
 const normalizeFilesForCompare = (fileList) =>
   [...fileList]
     .map((file) => ({
@@ -105,6 +98,10 @@ const Editor = () => {
   const [roomLoadError, setRoomLoadError] = useState("");
   const [isAccessDenied, setIsAccessDenied] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isRunning, setIsRunning] = useState(false);
+  const [runInput, setRunInput] = useState("");
+  const [terminalHeight, setTerminalHeight] = useState(220);
+  const [isResizingTerminal, setIsResizingTerminal] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
   const [isExitConfirmOpen, setIsExitConfirmOpen] = useState(false);
   const [fileActionModal, setFileActionModal] = useState({
@@ -112,7 +109,8 @@ const Editor = () => {
     filePath: "",
     nextPath: "",
   });
-  const [terminalLines, setTerminalLines] = useState(outputLinesSeed);
+  const [terminalLines, setTerminalLines] = useState([]);
+  const centerPanelRef = useRef(null);
 
   const activeCollab = useMemo(() => collaborators.filter((user) => user.online).length, []);
   const hasUnsavedChanges = useMemo(() => !areFileSetsEqual(files, savedFiles), [files, savedFiles]);
@@ -231,6 +229,50 @@ const Editor = () => {
     };
   }, [hasUnsavedChanges]);
 
+  useEffect(() => {
+    if (!isResizingTerminal) {
+      return undefined;
+    }
+
+    const handleMouseMove = (event) => {
+      const panelElement = centerPanelRef.current;
+
+      if (!panelElement) {
+        return;
+      }
+
+      const panelRect = panelElement.getBoundingClientRect();
+      const minTerminalHeight = 150;
+      const minEditorHeight = 220;
+      const maxTerminalHeight = Math.max(minTerminalHeight, panelRect.height - minEditorHeight);
+      const requestedHeight = panelRect.bottom - event.clientY;
+      const clampedHeight = Math.min(maxTerminalHeight, Math.max(minTerminalHeight, requestedHeight));
+
+      setTerminalHeight(clampedHeight);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizingTerminal(false);
+    };
+
+    document.body.style.cursor = "ns-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+
+    return () => {
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isResizingTerminal]);
+
+  const handleTerminalResizeStart = (event) => {
+    event.preventDefault();
+    setIsResizingTerminal(true);
+  };
+
   const handleEditorChange = (nextValue) => {
     const newContent = nextValue || "";
     setEditorCode(newContent);
@@ -284,6 +326,80 @@ const Editor = () => {
       setSaveMessage(message);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleRunCode = async () => {
+    const token = localStorage.getItem("token");
+
+    if (!token) {
+      navigate("/login", { replace: true });
+      return;
+    }
+
+    try {
+      setIsRunning(true);
+      setActiveBottomTab("output");
+      setTerminalLines([{ text: `[${new Date().toLocaleTimeString()}] Running ${activeFile || "file"}...`, type: "muted" }]);
+
+      const response = await executeCodeRequest(token, {
+        sourceCode: editorCode,
+        language: roomLanguage,
+        stdin: runInput,
+      });
+
+      const result = response.data?.result || {};
+      const nextLines = [];
+
+      nextLines.push({ text: `Status: ${result.status || "Unknown"}`, type: "muted" });
+
+      if (result.compileOutput) {
+        result.compileOutput
+          .split("\n")
+          .filter(Boolean)
+          .forEach((line) => nextLines.push({ text: line, type: "error" }));
+      }
+
+      if (result.stderr) {
+        result.stderr
+          .split("\n")
+          .filter(Boolean)
+          .forEach((line) => nextLines.push({ text: line, type: "error" }));
+      }
+
+      if (result.stdout) {
+        result.stdout
+          .split("\n")
+          .filter(Boolean)
+          .forEach((line) => nextLines.push({ text: line, type: "success" }));
+      }
+
+      if (result.message) {
+        nextLines.push({ text: result.message, type: "muted" });
+      }
+
+      if (result.time || result.memory) {
+        nextLines.push({
+          text: `time=${result.time ?? "-"}s memory=${result.memory ?? "-"}KB`,
+          type: "muted",
+        });
+      }
+
+      if (nextLines.length === 1) {
+        nextLines.push({ text: "No output.", type: "muted" });
+      }
+
+      setTerminalLines(nextLines);
+    } catch (error) {
+      const message = error.response?.data?.message || "Code execution failed.";
+      const details = error.response?.data?.details;
+      setTerminalLines([
+        { text: `[${new Date().toLocaleTimeString()}] Run failed`, type: "error" },
+        { text: message, type: "error" },
+        ...(details ? [{ text: String(details), type: "muted" }] : []),
+      ]);
+    } finally {
+      setIsRunning(false);
     }
   };
 
@@ -507,9 +623,9 @@ const Editor = () => {
           </div>
 
           <button type="button" className="editor-btn ghost">Invite</button>
-          <button type="button" className="editor-btn run">
+          <button type="button" className="editor-btn run" onClick={handleRunCode} disabled={isRunning}>
             <Play size={12} />
-            Run
+            {isRunning ? "Running..." : "Run"}
           </button>
           <button type="button" className="editor-btn ghost" onClick={handleSave} disabled={isSaving}>
             <Save size={12} />
@@ -577,7 +693,7 @@ const Editor = () => {
           </aside>
         ) : null}
 
-        <section className="editor-center-panel">
+        <section className="editor-center-panel" ref={centerPanelRef}>
           {leftCollapsed ? (
             <button
               type="button"
@@ -642,7 +758,14 @@ const Editor = () => {
 
           {saveMessage ? <p className="editor-save-message">{saveMessage}</p> : null}
 
-          <div className="terminal-panel">
+          <div className="terminal-panel" style={{ height: `${terminalHeight}px` }}>
+            <div
+              className="terminal-resizer"
+              role="separator"
+              aria-label="Resize output panel"
+              aria-orientation="horizontal"
+              onMouseDown={handleTerminalResizeStart}
+            />
             <div className="terminal-topbar">
               <div className="terminal-tabs">
                 <button
@@ -665,15 +788,33 @@ const Editor = () => {
               </button>
             </div>
 
+            {activeBottomTab === "output" ? (
+              <div className="terminal-input-wrap">
+                <label htmlFor="run-stdin" className="terminal-input-label">Give your inputs in order before running code.</label>
+                <textarea
+                  id="run-stdin"
+                  className="terminal-stdin-input"
+                  value={runInput}
+                  onChange={(event) => setRunInput(event.target.value)}
+                  placeholder="Type input exactly in the order your program expects"
+                  rows={2}
+                />
+              </div>
+            ) : null}
+
             <div className="terminal-body">
-              {terminalLines.length > 0 ? (
-                terminalLines.map((line, index) => (
-                  <p key={`line-${index}`} className={`term-line ${line.type}`}>
-                    {line.text}
-                  </p>
-                ))
+              {activeBottomTab === "output" ? (
+                terminalLines.length > 0 ? (
+                  terminalLines.map((line, index) => (
+                    <p key={`line-${index}`} className={`term-line ${line.type}`}>
+                      {line.text}
+                    </p>
+                  ))
+                ) : (
+                  <p className="term-line muted">Click Run to execute your current file.</p>
+                )
               ) : (
-                <p className="term-line muted">Output cleared.</p>
+                <p className="term-line muted">Interactive terminal is not connected yet.</p>
               )}
               <span className="terminal-cursor" aria-hidden="true" />
             </div>
