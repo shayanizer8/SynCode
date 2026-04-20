@@ -68,3 +68,11 @@ export const updateRoomContentRequest = (token, roomId, payload) =>
       Authorization: `Bearer ${token}`,
     },
   });
+
+export const executeCodeRequest = (token, payload) =>
+  axios.post(`${API_BASE_URL}/api/execute`, payload, {
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+  });
