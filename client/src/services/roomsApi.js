@@ -69,6 +69,27 @@ export const updateRoomContentRequest = (token, roomId, payload) =>
     },
   });
 
+export const getRoomMembersRequest = (token, roomId) =>
+  roomsClient.get(`/${roomId}/members`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+export const getRoomMessagesRequest = (token, roomId) =>
+  roomsClient.get(`/${roomId}/messages`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+export const sendRoomMessageRequest = (token, roomId, payload) =>
+  roomsClient.post(`/${roomId}/messages`, payload, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
 export const executeCodeRequest = (token, payload) =>
   axios.post(`${API_BASE_URL}/api/execute`, payload, {
     headers: {

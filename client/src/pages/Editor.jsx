@@ -1,12 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import MonacoEditor from "@monaco-editor/react";
+import { io } from "socket.io-client";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   executeCodeRequest,
   getRoomContentRequest,
+  getRoomMembersRequest,
+  getRoomMessagesRequest,
   getRoomMetadataRequest,
+  sendRoomMessageRequest,
   updateRoomContentRequest,
 } from "../services/roomsApi";
+import { getCurrentUserRequest } from "../services/authApi";
+import { clearAuthToken, getAuthToken } from "../services/tokenStorage";
 import {
   ArrowLeftRight,
   ChevronDown,
@@ -53,20 +59,28 @@ const defaultFileByLanguage = {
   },
 };
 
-const collaborators = [
-  { name: "Ahmed", status: "Editing main.py:12", tone: "tone-b", online: true },
-  { name: "Sara", status: "Editing main.py:18", tone: "tone-c", online: true },
-  { name: "John", status: "Idle", tone: "tone-a", online: true },
-  { name: "Mina", status: "Viewing", tone: "tone-d", online: false },
-];
+const tonePalette = ["tone-a", "tone-b", "tone-c", "tone-d"];
 
-const chatMessages = [
-  { id: 1, from: "Ahmed", at: "10:34", text: "I think we need broader exception handling.", mine: false, tone: "tone-b" },
-  { id: 2, from: "You", at: "10:35", text: "Agreed. Updating it now.", mine: true, tone: "tone-a" },
-  { id: 3, from: "Sara", at: "10:36", text: "Looks good after that change.", mine: false, tone: "tone-c" },
-  { id: 4, from: "John", at: "10:37", text: "Can we also log timestamps for each run?", mine: false, tone: "tone-d" },
-  { id: 5, from: "You", at: "10:38", text: "Added and pushed to main.py.", mine: true, tone: "tone-a" },
-];
+const getToneFromName = (name) => {
+  const safeName = typeof name === "string" ? name : "User";
+  const sum = safeName.split("").reduce((total, char) => total + char.charCodeAt(0), 0);
+
+  return tonePalette[sum % tonePalette.length];
+};
+
+const formatChatTime = (value) => {
+  if (!value) {
+    return "";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+};
 
 const normalizeFilesForCompare = (fileList) =>
   [...fileList]
@@ -80,6 +94,8 @@ const normalizeFilesForCompare = (fileList) =>
 const areFileSetsEqual = (leftFiles, rightFiles) =>
   JSON.stringify(normalizeFilesForCompare(leftFiles)) === JSON.stringify(normalizeFilesForCompare(rightFiles));
 
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+
 const Editor = () => {
   const { roomId } = useParams();
   const navigate = useNavigate();
@@ -88,6 +104,9 @@ const Editor = () => {
   const [rightCollapsed, setRightCollapsed] = useState(false);
   const [activeBottomTab, setActiveBottomTab] = useState("output");
   const [roomName, setRoomName] = useState("My Python Project");
+  const [roomInviteCode, setRoomInviteCode] = useState("");
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+  const [inviteCopyFeedback, setInviteCopyFeedback] = useState("");
   const [isEditingName, setIsEditingName] = useState(false);
   const [roomLanguage, setRoomLanguage] = useState("Python");
   const [files, setFiles] = useState([]);
@@ -110,14 +129,36 @@ const Editor = () => {
     nextPath: "",
   });
   const [terminalLines, setTerminalLines] = useState([]);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [collaborators, setCollaborators] = useState([]);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatError, setChatError] = useState("");
+  const [isSendingChatMessage, setIsSendingChatMessage] = useState(false);
+  const [onlineUserIds, setOnlineUserIds] = useState([]);
   const centerPanelRef = useRef(null);
+  const chatBottomRef = useRef(null);
+  const socketRef = useRef(null);
 
-  const activeCollab = useMemo(() => collaborators.filter((user) => user.online).length, []);
+  const activeCollab = useMemo(() => onlineUserIds.length, [onlineUserIds]);
+  const collaboratorsWithPresence = useMemo(
+    () =>
+      collaborators.map((member) => {
+        const isOnline = onlineUserIds.includes(member.userId);
+
+        return {
+          ...member,
+          online: isOnline,
+          status: `${member.roleLabel}${isOnline ? " • online" : " • offline"}`,
+        };
+      }),
+    [collaborators, onlineUserIds]
+  );
   const hasUnsavedChanges = useMemo(() => !areFileSetsEqual(files, savedFiles), [files, savedFiles]);
 
   useEffect(() => {
     const fetchRoomData = async () => {
-      const token = localStorage.getItem("token");
+      const token = getAuthToken();
 
       if (!token) {
         navigate("/login", { replace: true });
@@ -150,6 +191,7 @@ const Editor = () => {
 
         setRoomName(room.name || "Untitled Room");
         setRoomLanguage(room.language || "Python");
+        setRoomInviteCode(room.inviteCode || "");
 
         const fallback = defaultFileByLanguage[room.language] || defaultFileByLanguage.Python;
         const normalizedFiles =
@@ -175,7 +217,7 @@ const Editor = () => {
         const status = error.response?.status;
 
         if (status === 401) {
-          localStorage.removeItem("token");
+          clearAuthToken();
           navigate("/login", { replace: true });
           return;
         }
@@ -228,6 +270,216 @@ const Editor = () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
     };
   }, [hasUnsavedChanges]);
+
+  useEffect(() => {
+    const token = getAuthToken();
+
+    if (!token) {
+      return;
+    }
+
+    const fetchCurrentUser = async () => {
+      try {
+        const response = await getCurrentUserRequest(token);
+        setCurrentUser(response.data?.user || null);
+      } catch (error) {
+        if (error.response?.status === 401) {
+          clearAuthToken();
+          navigate("/login", { replace: true });
+        }
+      }
+    };
+
+    fetchCurrentUser();
+  }, [navigate]);
+
+  useEffect(() => {
+    const token = getAuthToken();
+
+    if (!token || !roomId || isAccessDenied) {
+      return undefined;
+    }
+
+    let isCancelled = false;
+
+    const fetchRoomChatData = async () => {
+      try {
+        const [membersResponse, messagesResponse] = await Promise.all([
+          getRoomMembersRequest(token, roomId),
+          getRoomMessagesRequest(token, roomId),
+        ]);
+
+        if (isCancelled) {
+          return;
+        }
+
+        const members = Array.isArray(membersResponse.data?.members)
+          ? membersResponse.data.members.map((member) => ({
+              userId: member.userId,
+              name: member.name || "Unknown",
+              roleLabel: member.role ? `Role: ${member.role}` : "Member",
+              tone: getToneFromName(member.name),
+            }))
+          : [];
+
+        const messages = Array.isArray(messagesResponse.data?.messages)
+          ? messagesResponse.data.messages.map((message) => ({
+              id: message.id,
+              userId: message.userId,
+              from: message.senderName || "Unknown",
+              at: formatChatTime(message.createdAt),
+              text: message.text || "",
+              tone: getToneFromName(message.senderName),
+              deliveryStatus: "",
+            }))
+          : [];
+
+        setCollaborators(members);
+        setChatMessages((prev) => {
+          const previousStatusById = new Map(prev.map((item) => [item.id, item.deliveryStatus]));
+
+          return messages.map((message) => {
+            const isMine = String(currentUser?.id || "") === String(message.userId || "");
+
+            if (!isMine) {
+              return message;
+            }
+
+            const previousStatus = previousStatusById.get(message.id);
+
+            return {
+              ...message,
+              deliveryStatus: previousStatus === "delivered" ? "delivered" : "sent",
+            };
+          });
+        });
+        setChatError("");
+      } catch (error) {
+        if (isCancelled) {
+          return;
+        }
+
+        const status = error.response?.status;
+
+        if (status === 401) {
+          clearAuthToken();
+          navigate("/login", { replace: true });
+          return;
+        }
+
+        if (status === 403) {
+          setIsAccessDenied(true);
+          return;
+        }
+
+        const message = error.response?.data?.message || "Could not load room chat.";
+        setChatError(message);
+      }
+    };
+
+    fetchRoomChatData();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [currentUser?.id, isAccessDenied, navigate, roomId]);
+
+  useEffect(() => {
+    chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatMessages]);
+
+  useEffect(() => {
+    const hasOnlineRecipients = onlineUserIds.some((userId) => String(userId) !== String(currentUser?.id));
+
+    if (!hasOnlineRecipients || !currentUser?.id) {
+      return;
+    }
+
+    setChatMessages((prev) => {
+      let changed = false;
+
+      const next = prev.map((message) => {
+        if (String(message.userId) !== String(currentUser.id) || message.deliveryStatus === "delivered") {
+          return message;
+        }
+
+        changed = true;
+        return {
+          ...message,
+          deliveryStatus: "delivered",
+        };
+      });
+
+      return changed ? next : prev;
+    });
+  }, [onlineUserIds, currentUser?.id]);
+
+  useEffect(() => {
+    const token = getAuthToken();
+
+    if (!token || !roomId || isAccessDenied) {
+      return undefined;
+    }
+
+    const socket = io(API_BASE_URL, {
+      auth: {
+        token,
+      },
+      transports: ["websocket"],
+    });
+
+    socketRef.current = socket;
+
+    socket.on("connect", () => {
+      socket.emit("room:join", { roomId }, (ack) => {
+        if (!ack?.ok) {
+          setChatError(ack?.message || "Could not join realtime room.");
+        }
+      });
+    });
+
+    socket.on("room:presence", (payload) => {
+      if (payload?.roomId !== roomId) {
+        return;
+      }
+
+      setOnlineUserIds(Array.isArray(payload.userIds) ? payload.userIds : []);
+    });
+
+    socket.on("chat:new", (message) => {
+      if (message?.roomId !== roomId) {
+        return;
+      }
+
+      const normalizedMessage = {
+        id: message.id,
+        userId: message.userId,
+        from: message.senderName || "Unknown",
+        at: formatChatTime(message.createdAt),
+        text: message.text || "",
+        tone: getToneFromName(message.senderName),
+        deliveryStatus: "sent",
+      };
+
+      setChatMessages((prev) => {
+        if (prev.some((item) => item.id === normalizedMessage.id)) {
+          return prev;
+        }
+
+        return [...prev, normalizedMessage];
+      });
+    });
+
+    socket.on("connect_error", () => {
+      setChatError("Realtime connection failed. Falling back to API chat.");
+    });
+
+    return () => {
+      socket.disconnect();
+      socketRef.current = null;
+      setOnlineUserIds([]);
+    };
+  }, [isAccessDenied, roomId]);
 
   useEffect(() => {
     if (!isResizingTerminal) {
@@ -291,7 +543,7 @@ const Editor = () => {
   };
 
   const handleSave = async () => {
-    const token = localStorage.getItem("token");
+    const token = getAuthToken();
 
     if (!token) {
       navigate("/login", { replace: true });
@@ -312,7 +564,7 @@ const Editor = () => {
       const status = error.response?.status;
 
       if (status === 401) {
-        localStorage.removeItem("token");
+        clearAuthToken();
         navigate("/login", { replace: true });
         return;
       }
@@ -330,7 +582,7 @@ const Editor = () => {
   };
 
   const handleRunCode = async () => {
-    const token = localStorage.getItem("token");
+    const token = getAuthToken();
 
     if (!token) {
       navigate("/login", { replace: true });
@@ -400,6 +652,120 @@ const Editor = () => {
       ]);
     } finally {
       setIsRunning(false);
+    }
+  };
+
+  const handleSendChatMessage = async (event) => {
+    event.preventDefault();
+
+    const token = getAuthToken();
+    const text = chatInput.trim();
+
+    if (!token) {
+      navigate("/login", { replace: true });
+      return;
+    }
+
+    if (!text) {
+      return;
+    }
+
+    const hasOnlineRecipients = onlineUserIds.some((userId) => String(userId) !== String(currentUser?.id));
+
+    try {
+      setIsSendingChatMessage(true);
+      setChatError("");
+      const socket = socketRef.current;
+
+      if (socket && socket.connected) {
+        const ack = await new Promise((resolve) => {
+          socket.emit("chat:send", { roomId, text }, resolve);
+        });
+
+        if (!ack?.ok) {
+          throw new Error(ack?.message || "Unable to send message right now.");
+        }
+
+        const sentMessage = ack.message;
+
+        if (sentMessage?.id) {
+          setChatMessages((prev) => {
+            const nextMessage = {
+              id: sentMessage.id,
+              userId: sentMessage.userId,
+              from: sentMessage.senderName || currentUser?.name || "You",
+              at: formatChatTime(sentMessage.createdAt),
+              text: sentMessage.text || "",
+              tone: getToneFromName(sentMessage.senderName || currentUser?.name),
+              deliveryStatus: ack.deliveryStatus || (hasOnlineRecipients ? "delivered" : "sent"),
+            };
+
+            const existingIndex = prev.findIndex((item) => item.id === nextMessage.id);
+
+            if (existingIndex >= 0) {
+              const copy = [...prev];
+              copy[existingIndex] = {
+                ...copy[existingIndex],
+                deliveryStatus: nextMessage.deliveryStatus,
+              };
+              return copy;
+            }
+
+            return [...prev, nextMessage];
+          });
+        }
+
+        setChatInput("");
+      } else {
+        const response = await sendRoomMessageRequest(token, roomId, { text });
+        const createdMessage = response.data?.message;
+
+        if (createdMessage) {
+          setChatMessages((prev) => {
+            if (prev.some((item) => item.id === createdMessage.id)) {
+              return prev;
+            }
+
+            return [
+              ...prev,
+              {
+                id: createdMessage.id,
+                userId: createdMessage.userId,
+                from: createdMessage.senderName || currentUser?.name || "You",
+                at: formatChatTime(createdMessage.createdAt),
+                text: createdMessage.text || "",
+                tone: getToneFromName(createdMessage.senderName || currentUser?.name),
+                deliveryStatus: "sent",
+              },
+            ];
+          });
+        }
+
+        setChatInput("");
+      }
+    } catch (error) {
+      if (error.message) {
+        setChatError(error.message);
+        return;
+      }
+
+      const status = error.response?.status;
+
+      if (status === 401) {
+        clearAuthToken();
+        navigate("/login", { replace: true });
+        return;
+      }
+
+      if (status === 403) {
+        setIsAccessDenied(true);
+        return;
+      }
+
+      const message = error.response?.data?.message || "Unable to send message right now.";
+      setChatError(message);
+    } finally {
+      setIsSendingChatMessage(false);
     }
   };
 
@@ -541,6 +907,38 @@ const Editor = () => {
     navigate("/dashboard");
   };
 
+  const openInviteModal = () => {
+    setInviteCopyFeedback("");
+    setIsInviteModalOpen(true);
+  };
+
+  const closeInviteModal = () => {
+    setIsInviteModalOpen(false);
+    setInviteCopyFeedback("");
+  };
+
+  const copyInviteText = async (value, type) => {
+    if (!value) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(value);
+      setInviteCopyFeedback("Invite code copied");
+    } catch {
+      const textArea = document.createElement("textarea");
+      textArea.value = value;
+      textArea.style.position = "fixed";
+      textArea.style.opacity = "0";
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textArea);
+      setInviteCopyFeedback("Invite code copied");
+    }
+  };
+
   if (isLoadingRoom) {
     return (
       <div className="editor-page editor-status-page">
@@ -622,7 +1020,7 @@ const Editor = () => {
             ))}
           </div>
 
-          <button type="button" className="editor-btn ghost">Invite</button>
+          <button type="button" className="editor-btn ghost" onClick={openInviteModal}>Invite</button>
           <button type="button" className="editor-btn run" onClick={handleRunCode} disabled={isRunning}>
             <Play size={12} />
             {isRunning ? "Running..." : "Run"}
@@ -829,10 +1227,10 @@ const Editor = () => {
             </div>
 
             <div className="collab-list">
-              {collaborators.map((user) => (
-                <div key={user.name} className="collab-row">
+              {collaboratorsWithPresence.length > 0 ? collaboratorsWithPresence.map((user) => (
+                <div key={user.userId} className="collab-row">
                   <span className={`top-avatar ${user.tone}`}>
-                    {user.name[0]}
+                    {(user.name || "U")[0]}
                     {user.online ? <i className="mini-online-dot" aria-hidden="true" /> : null}
                   </span>
                   <div>
@@ -840,7 +1238,7 @@ const Editor = () => {
                     <small>{user.status}</small>
                   </div>
                 </div>
-              ))}
+              )) : <p className="chat-empty">No collaborators in this room yet.</p>}
             </div>
 
             <div className="chat-divider" />
@@ -848,20 +1246,44 @@ const Editor = () => {
             <div className="chat-header">Chat</div>
 
             <div className="chat-messages">
-              {chatMessages.map((message) => (
-                <article key={message.id} className={`chat-msg${message.mine ? " mine" : ""}`}>
-                  <div className="chat-meta">
-                    <span className={`chat-user ${message.tone}`}>{message.from}</span>
-                    <time>{message.at}</time>
-                  </div>
-                  <p>{message.text}</p>
-                </article>
-              ))}
+              {chatMessages.length > 0 ? (
+                chatMessages.map((message) => {
+                  const isMine = currentUser?.id === message.userId;
+
+                  return (
+                    <article key={message.id} className={`chat-msg${isMine ? " mine" : ""}`}>
+                      <div className="chat-meta">
+                        <span className="chat-user">{message.from}</span>
+                      </div>
+                      <p>{message.text}</p>
+                      <div className={`chat-msg-footer${isMine ? " mine" : ""}`}>
+                        <time>{message.at}</time>
+                        {isMine ? (
+                          <span className={`chat-delivery ${message.deliveryStatus === "delivered" ? "delivered" : "sent"}`}>
+                            {message.deliveryStatus === "delivered" ? "✓✓" : "✓"}
+                          </span>
+                        ) : null}
+                      </div>
+                    </article>
+                  );
+                })
+              ) : (
+                <p className="chat-empty">No messages yet. Start the conversation.</p>
+              )}
+              <div ref={chatBottomRef} />
             </div>
 
-            <form className="chat-input-row" onSubmit={(event) => event.preventDefault()}>
-              <input type="text" placeholder="Type a message..." />
-              <button type="submit" aria-label="Send message">
+            {chatError ? <p className="chat-error">{chatError}</p> : null}
+
+            <form className="chat-input-row" onSubmit={handleSendChatMessage}>
+              <input
+                type="text"
+                placeholder="Type a message..."
+                value={chatInput}
+                onChange={(event) => setChatInput(event.target.value)}
+                maxLength={2000}
+              />
+              <button type="submit" aria-label="Send message" disabled={isSendingChatMessage || !chatInput.trim()}>
                 <SendHorizontal size={16} />
               </button>
             </form>
@@ -932,6 +1354,31 @@ const Editor = () => {
               </button>
               <button type="button" className="editor-btn run editor-danger-btn" onClick={confirmExitWithoutSaving}>
                 Leave Without Saving
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {isInviteModalOpen ? (
+        <div className="editor-modal-overlay" onClick={closeInviteModal} role="presentation">
+          <section className="editor-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+            <h3>Invite to {roomName}</h3>
+            <p>Share this code with collaborators so they can join this room.</p>
+
+            <div className="invite-row">
+              <label htmlFor="invite-code">Invite Code</label>
+              <div className="invite-field-wrap">
+                <input id="invite-code" type="text" className="editor-modal-input" value={roomInviteCode} readOnly />
+                <button type="button" className="editor-btn ghost invite-copy-btn" onClick={() => copyInviteText(roomInviteCode, "code")}>Copy Code</button>
+              </div>
+            </div>
+
+            {inviteCopyFeedback ? <p className="invite-feedback">{inviteCopyFeedback}</p> : null}
+
+            <div className="editor-modal-actions">
+              <button type="button" className="editor-btn ghost" onClick={closeInviteModal}>
+                Close
               </button>
             </div>
           </section>

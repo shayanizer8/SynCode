@@ -6,6 +6,7 @@ import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
 import Editor from "./pages/Editor";
 import { getCurrentUserRequest } from "./services/authApi";
+import { clearAuthToken, getAuthToken } from "./services/tokenStorage";
 
 const ProtectedRoute = ({ children }) => {
   const [isValidating, setIsValidating] = useState(true);
@@ -13,7 +14,7 @@ const ProtectedRoute = ({ children }) => {
 
   useEffect(() => {
     const validateToken = async () => {
-      const token = localStorage.getItem("token");
+      const token = getAuthToken();
 
       if (!token) {
         setIsAuthenticated(false);
@@ -25,7 +26,7 @@ const ProtectedRoute = ({ children }) => {
         await getCurrentUserRequest(token);
         setIsAuthenticated(true);
       } catch {
-        localStorage.removeItem("token");
+        clearAuthToken();
         setIsAuthenticated(false);
       } finally {
         setIsValidating(false);

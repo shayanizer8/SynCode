@@ -24,6 +24,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { clearAuthToken, getAuthToken } from "../services/tokenStorage";
 
 const navItems = [
   { key: "home", label: "Home", icon: Home, active: true },
@@ -100,7 +101,7 @@ const Dashboard = () => {
   const [recentRoomsError, setRecentRoomsError] = useState("");
 
   const refreshRooms = async () => {
-    const token = localStorage.getItem("token");
+    const token = getAuthToken();
 
     if (!token) {
       navigate("/login");
@@ -118,7 +119,7 @@ const Dashboard = () => {
       const status = error.response?.status;
 
       if (status === 401) {
-        localStorage.removeItem("token");
+        clearAuthToken();
         navigate("/login");
         return;
       }
@@ -131,7 +132,7 @@ const Dashboard = () => {
   };
 
   const fetchRecentRooms = async () => {
-    const token = localStorage.getItem("token");
+    const token = getAuthToken();
 
     if (!token) {
       navigate("/login");
@@ -149,7 +150,7 @@ const Dashboard = () => {
       const status = error.response?.status;
 
       if (status === 401) {
-        localStorage.removeItem("token");
+        clearAuthToken();
         navigate("/login");
         return;
       }
@@ -215,7 +216,7 @@ const Dashboard = () => {
       return;
     }
 
-    const token = localStorage.getItem("token");
+    const token = getAuthToken();
 
     if (!token) {
       navigate("/login");
@@ -249,7 +250,7 @@ const Dashboard = () => {
       const status = error.response?.status;
 
       if (status === 401) {
-        localStorage.removeItem("token");
+        clearAuthToken();
         navigate("/login");
         return;
       }
@@ -267,7 +268,7 @@ const Dashboard = () => {
       return;
     }
 
-    const token = localStorage.getItem("token");
+    const token = getAuthToken();
 
     if (!token) {
       navigate("/login");
@@ -298,7 +299,7 @@ const Dashboard = () => {
       const status = error.response?.status;
 
       if (status === 401) {
-        localStorage.removeItem("token");
+        clearAuthToken();
         navigate("/login");
         return;
       }
@@ -311,7 +312,7 @@ const Dashboard = () => {
   };
 
   const handleJoinRecentRoom = async (roomId) => {
-    const token = localStorage.getItem("token");
+    const token = getAuthToken();
 
     if (!token) {
       navigate("/login");
@@ -329,7 +330,7 @@ const Dashboard = () => {
       const status = error.response?.status;
 
       if (status === 401) {
-        localStorage.removeItem("token");
+        clearAuthToken();
         navigate("/login");
         return;
       }
@@ -352,7 +353,7 @@ const Dashboard = () => {
   const confirmLogout = () => {
     setIsLogoutConfirmOpen(false);
 
-    localStorage.removeItem("token");
+    clearAuthToken();
     navigate("/login", { replace: true });
   };
 

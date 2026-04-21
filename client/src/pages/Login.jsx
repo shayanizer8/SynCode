@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { loginRequest } from "../services/authApi";
 import { getRoomsRequest } from "../services/roomsApi";
+import { clearAuthToken, setAuthToken } from "../services/tokenStorage";
 import { ArrowLeft, ArrowLeftRight, Eye, EyeOff } from "lucide-react";
 
 const Login = () => {
@@ -65,7 +66,8 @@ const Login = () => {
         return;
       }
 
-      localStorage.setItem("token", token);
+      clearAuthToken();
+      setAuthToken(token);
 
       const roomsResponse = await getRoomsRequest(token);
       const initialRooms = Array.isArray(roomsResponse.data?.rooms) ? roomsResponse.data.rooms : [];
