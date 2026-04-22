@@ -26,7 +26,6 @@ import {
   Plus,
   Save,
   SendHorizontal,
-  Settings,
   Trash2,
 } from "lucide-react";
 
@@ -108,7 +107,6 @@ const Editor = () => {
   const [roomInviteCode, setRoomInviteCode] = useState("");
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [inviteCopyFeedback, setInviteCopyFeedback] = useState("");
-  const [isEditingName, setIsEditingName] = useState(false);
   const [roomLanguage, setRoomLanguage] = useState("Python");
   const [files, setFiles] = useState([]);
   const [savedFiles, setSavedFiles] = useState([]);
@@ -1454,25 +1452,9 @@ const Editor = () => {
           </button>
 
           <div className="room-name-wrap">
-            {isEditingName ? (
-              <input
-                className="room-name-input"
-                value={roomName}
-                onChange={(event) => setRoomName(event.target.value)}
-                onBlur={() => setIsEditingName(false)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    setIsEditingName(false);
-                  }
-                }}
-                autoFocus
-              />
-            ) : (
-              <button type="button" className="room-name-btn" onClick={() => setIsEditingName(true)}>
-                <span>{roomName}</span>
-                <Edit3 size={13} className="room-pencil" />
-              </button>
-            )}
+            <div className="room-name-btn">
+              <span>{roomName}</span>
+            </div>
           </div>
 
           <button type="button" className="language-pill">
@@ -1498,9 +1480,6 @@ const Editor = () => {
           <button type="button" className="editor-btn ghost" onClick={handleSave} disabled={isSaving}>
             <Save size={12} />
             {isSaving ? "Saving..." : "Save"}
-          </button>
-          <button type="button" className="editor-icon-btn" aria-label="Settings">
-            <Settings size={16} />
           </button>
           <button type="button" className="editor-icon-btn" aria-label="Back to dashboard" onClick={handleAttemptExit}>
             <LogOut size={16} />
