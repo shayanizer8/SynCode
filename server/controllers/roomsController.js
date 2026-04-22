@@ -177,6 +177,79 @@ const createRoom = async (req, res) => {
   }
 };
 
+const renameRoom = async (req, res) => {
+  try {
+    if (!ensureAuth(req, res)) {
+      return;
+    }
+
+    const { roomId } = req.params;
+    const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+
+    if (!roomId) {
+      return res.status(400).json({ message: "Room id is required" });
+    }
+
+    if (!name) {
+      return res.status(400).json({ message: "Room name is required" });
+    }
+
+    const room = await Room.findById(roomId);
+
+    if (!room) {
+      return res.status(404).json({ message: "Room not found" });
+    }
+
+    if (room.ownerId.toString() !== req.user.userId) {
+      return res.status(403).json({ message: "Only the room owner can rename this room" });
+    }
+
+    room.name = name;
+    await room.save();
+
+    return res.status(200).json({ room: serializeRoom(room) });
+  } catch (error) {
+    console.error("Rename room error:", error.message);
+    return res.status(500).json({ message: "Server error" });
+  }
+};
+
+const deleteRoom = async (req, res) => {
+  try {
+    if (!ensureAuth(req, res)) {
+      return;
+    }
+
+    const { roomId } = req.params;
+
+    if (!roomId) {
+      return res.status(400).json({ message: "Room id is required" });
+    }
+
+    const room = await Room.findById(roomId).lean();
+
+    if (!room) {
+      return res.status(404).json({ message: "Room not found" });
+    }
+
+    if (room.ownerId.toString() !== req.user.userId) {
+      return res.status(403).json({ message: "Only the room owner can delete this room" });
+    }
+
+    await Promise.all([
+      RoomFile.deleteMany({ roomId: room._id }),
+      RoomMember.deleteMany({ roomId: room._id }),
+      RoomMessage.deleteMany({ roomId: room._id }),
+      Room.deleteOne({ _id: room._id }),
+    ]);
+
+    return res.status(200).json({ message: "Room deleted" });
+  } catch (error) {
+    console.error("Delete room error:", error.message);
+    return res.status(500).json({ message: "Server error" });
+  }
+};
+
 const joinRoomByInvite = async (req, res) => {
   try {
     if (!ensureAuth(req, res)) {
@@ -541,6 +614,8 @@ const sendRoomMessage = async (req, res) => {
 
 module.exports = {
   createRoom,
+  renameRoom,
+  deleteRoom,
   getUserRooms,
   getRecentRooms,
   getRoomMetadata,

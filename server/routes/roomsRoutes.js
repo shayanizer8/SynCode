@@ -1,6 +1,8 @@
 const express = require("express");
 const {
 	createRoom,
+	renameRoom,
+	deleteRoom,
 	getUserRooms,
 	getRecentRooms,
 	getRoomMetadata,
@@ -24,6 +26,8 @@ router.get("/:roomId/messages", protect, getRoomMessages);
 router.post("/:roomId/messages", protect, sendRoomMessage);
 router.get("/:roomId/content", protect, getRoomContent);
 router.put("/:roomId/content", protect, updateRoomContent);
+router.put("/:roomId", protect, renameRoom);
+router.delete("/:roomId", protect, deleteRoom);
 router.post("/", protect, createRoom);
 router.post("/join", protect, joinRoomByInvite);
 router.post("/join/:roomId", protect, joinRoomById);

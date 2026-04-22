@@ -2,16 +2,17 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   createRoomRequest,
+  deleteRoomRequest,
   getRecentRoomsRequest,
   getRoomsRequest,
   joinRoomByIdRequest,
   joinRoomByInviteRequest,
+  renameRoomRequest,
 } from "../services/roomsApi";
 import {
   ArrowRight,
   ArrowLeftRight,
   ChevronDown,
-  Copy,
   Filter,
   FolderClosed,
   Home,
@@ -25,6 +26,7 @@ import {
   X,
 } from "lucide-react";
 import { clearAuthToken, getAuthToken } from "../services/tokenStorage";
+import { getCurrentUserRequest } from "../services/authApi";
 
 const navItems = [
   { key: "home", label: "Home", icon: Home, active: true },
@@ -99,6 +101,25 @@ const Dashboard = () => {
   const [recentRooms, setRecentRooms] = useState([]);
   const [isRecentRoomsLoading, setIsRecentRoomsLoading] = useState(false);
   const [recentRoomsError, setRecentRoomsError] = useState("");
+  const [currentUserId, setCurrentUserId] = useState("");
+  const [openRoomMenuId, setOpenRoomMenuId] = useState("");
+  const [menuActionError, setMenuActionError] = useState("");
+  const [roomActionState, setRoomActionState] = useState({
+    mode: "",
+    roomId: "",
+  });
+  const [renameDialogState, setRenameDialogState] = useState({
+    isOpen: false,
+    roomId: "",
+    roomName: "",
+    nextName: "",
+    error: "",
+  });
+  const [deleteDialogState, setDeleteDialogState] = useState({
+    isOpen: false,
+    roomId: "",
+    roomName: "",
+  });
 
   const refreshRooms = async () => {
     const token = getAuthToken();
@@ -167,6 +188,29 @@ const Dashboard = () => {
   }, [navigate]);
 
   useEffect(() => {
+    const fetchCurrentUser = async () => {
+      const token = getAuthToken();
+
+      if (!token) {
+        navigate("/login");
+        return;
+      }
+
+      try {
+        const response = await getCurrentUserRequest(token);
+        setCurrentUserId(String(response.data?.user?._id || response.data?.user?.id || ""));
+      } catch (error) {
+        if (error.response?.status === 401) {
+          clearAuthToken();
+          navigate("/login", { replace: true });
+        }
+      }
+    };
+
+    fetchCurrentUser();
+  }, [navigate]);
+
+  useEffect(() => {
     if (isRoomModalOpen && activeModalTab === "join") {
       fetchRecentRooms();
     }
@@ -177,11 +221,139 @@ const Dashboard = () => {
       rooms.map((room) => ({
         ...room,
         id: String(room.id || room._id || ""),
+        ownerId: String(room.ownerId || ""),
         edited: getRelativeEditedLabel(room.updatedAt),
         collaborators: Array.isArray(room.collaborators) ? room.collaborators : [],
+        isOwner: String(room.ownerId || "") === String(currentUserId || ""),
       })),
-    [rooms]
+    [rooms, currentUserId]
   );
+
+  const handleToggleRoomMenu = (roomId) => {
+    setMenuActionError("");
+    setOpenRoomMenuId((prev) => (prev === roomId ? "" : roomId));
+  };
+
+  const openRenameDialog = (room) => {
+    setMenuActionError("");
+    setOpenRoomMenuId("");
+    setRenameDialogState({
+      isOpen: true,
+      roomId: room.id,
+      roomName: room.name || "",
+      nextName: room.name || "",
+      error: "",
+    });
+  };
+
+  const closeRenameDialog = () => {
+    setRenameDialogState({
+      isOpen: false,
+      roomId: "",
+      roomName: "",
+      nextName: "",
+      error: "",
+    });
+  };
+
+  const openDeleteDialog = (room) => {
+    setMenuActionError("");
+    setOpenRoomMenuId("");
+    setDeleteDialogState({
+      isOpen: true,
+      roomId: room.id,
+      roomName: room.name || "",
+    });
+  };
+
+  const closeDeleteDialog = () => {
+    setDeleteDialogState({
+      isOpen: false,
+      roomId: "",
+      roomName: "",
+    });
+  };
+
+  const handleRenameRoom = async () => {
+    const trimmedName = renameDialogState.nextName.trim();
+
+    if (!trimmedName) {
+      setRenameDialogState((prev) => ({
+        ...prev,
+        error: "Room name is required.",
+      }));
+      return;
+    }
+
+    if (trimmedName === renameDialogState.roomName) {
+      closeRenameDialog();
+      return;
+    }
+
+    const token = getAuthToken();
+
+    if (!token) {
+      navigate("/login");
+      return;
+    }
+
+    try {
+      setRoomActionState({ mode: "rename", roomId: renameDialogState.roomId });
+      setMenuActionError("");
+      setRenameDialogState((prev) => ({ ...prev, error: "" }));
+      await renameRoomRequest(token, renameDialogState.roomId, { name: trimmedName });
+      setOpenRoomMenuId("");
+      closeRenameDialog();
+      await refreshRooms();
+    } catch (error) {
+      const status = error.response?.status;
+
+      if (status === 401) {
+        clearAuthToken();
+        navigate("/login", { replace: true });
+        return;
+      }
+
+      const message = error.response?.data?.message || "Unable to rename this room.";
+      setRenameDialogState((prev) => ({
+        ...prev,
+        error: message,
+      }));
+    } finally {
+      setRoomActionState({ mode: "", roomId: "" });
+    }
+  };
+
+  const handleDeleteRoom = async () => {
+    const token = getAuthToken();
+
+    if (!token) {
+      navigate("/login");
+      return;
+    }
+
+    try {
+      setRoomActionState({ mode: "delete", roomId: deleteDialogState.roomId });
+      setMenuActionError("");
+      await deleteRoomRequest(token, deleteDialogState.roomId);
+      setOpenRoomMenuId("");
+      closeDeleteDialog();
+      await refreshRooms();
+    } catch (error) {
+      const status = error.response?.status;
+
+      if (status === 401) {
+        clearAuthToken();
+        navigate("/login", { replace: true });
+        return;
+      }
+
+      const message = error.response?.data?.message || "Unable to delete this room.";
+      setMenuActionError(message);
+    } finally {
+      setRoomActionState({ mode: "", roomId: "" });
+    }
+  };
 
   const openRoomModal = () => {
     setActiveModalTab("create");
@@ -417,6 +589,7 @@ const Dashboard = () => {
         <div className="dashboard-divider" />
 
         {roomsError ? <p className="form-server-error">{roomsError}</p> : null}
+        {menuActionError ? <p className="form-server-error">{menuActionError}</p> : null}
 
         {isLoadingRooms ? (
           <section className="rooms-empty-state" aria-label="Rooms loading state">
@@ -455,9 +628,16 @@ const Dashboard = () => {
                         </span>
                       ) : null}
                     </div>
-                    <button type="button" className="room-menu-btn" aria-label="Room options">
-                      <MoreVertical size={16} />
-                    </button>
+                    {room.isOwner ? (
+                      <button
+                        type="button"
+                        className="room-menu-btn"
+                        aria-label="Room options"
+                        onClick={() => handleToggleRoomMenu(room.id)}
+                      >
+                        <MoreVertical size={16} />
+                      </button>
+                    ) : null}
                   </div>
 
                   <h2>{room.name}</h2>
@@ -482,15 +662,24 @@ const Dashboard = () => {
                     </Link>
                   </div>
 
-                  {room.menuOpen ? (
+                  {room.isOwner && openRoomMenuId === room.id ? (
                     <div className="room-menu-popup" role="menu" aria-label="Room actions">
-                      <button type="button" className="room-menu-item" role="menuitem">
+                      <button
+                        type="button"
+                        className="room-menu-item"
+                        role="menuitem"
+                        onClick={() => openRenameDialog(room)}
+                        disabled={roomActionState.mode !== "" && roomActionState.roomId === room.id}
+                      >
                         <Pencil size={14} /> Rename
                       </button>
-                      <button type="button" className="room-menu-item" role="menuitem">
-                        <Copy size={14} /> Copy Invite Link
-                      </button>
-                      <button type="button" className="room-menu-item delete" role="menuitem">
+                      <button
+                        type="button"
+                        className="room-menu-item delete"
+                        role="menuitem"
+                        onClick={() => openDeleteDialog(room)}
+                        disabled={roomActionState.mode !== "" && roomActionState.roomId === room.id}
+                      >
                         <Trash2 size={14} /> Delete
                       </button>
                     </div>
@@ -700,6 +889,98 @@ const Dashboard = () => {
                 </button>
                 <button type="button" className="btn btn-filled" onClick={confirmLogout}>
                   Logout
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {renameDialogState.isOpen ? (
+        <div className="room-modal-overlay" onClick={closeRenameDialog} role="presentation">
+          <section className="room-modal room-action-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+            <button type="button" className="room-modal-close" onClick={closeRenameDialog} aria-label="Close rename dialog">
+              <X size={18} />
+            </button>
+
+            <div className="room-action-content">
+              <h2>Rename Room</h2>
+              <p>Update the room name for your collaborators.</p>
+
+              {renameDialogState.error ? <p className="form-server-error">{renameDialogState.error}</p> : null}
+
+              <div className="room-field">
+                <label htmlFor="rename-room-input">Room Name</label>
+                <input
+                  id="rename-room-input"
+                  type="text"
+                  value={renameDialogState.nextName}
+                  onChange={(event) =>
+                    setRenameDialogState((prev) => ({
+                      ...prev,
+                      nextName: event.target.value,
+                      error: "",
+                    }))
+                  }
+                />
+              </div>
+
+              <div className="logout-confirm-actions">
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={closeRenameDialog}
+                  disabled={roomActionState.mode === "rename" && roomActionState.roomId === renameDialogState.roomId}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-filled"
+                  onClick={handleRenameRoom}
+                  disabled={roomActionState.mode === "rename" && roomActionState.roomId === renameDialogState.roomId}
+                >
+                  {roomActionState.mode === "rename" && roomActionState.roomId === renameDialogState.roomId
+                    ? "Renaming..."
+                    : "Rename"}
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {deleteDialogState.isOpen ? (
+        <div className="room-modal-overlay" onClick={closeDeleteDialog} role="presentation">
+          <section className="room-modal room-action-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+            <button type="button" className="room-modal-close" onClick={closeDeleteDialog} aria-label="Close delete dialog">
+              <X size={18} />
+            </button>
+
+            <div className="room-action-content">
+              <h2>Delete Room?</h2>
+              <p>
+                This will permanently delete <strong>{deleteDialogState.roomName}</strong> and its files, messages, and member list.
+              </p>
+
+              <div className="logout-confirm-actions">
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={closeDeleteDialog}
+                  disabled={roomActionState.mode === "delete" && roomActionState.roomId === deleteDialogState.roomId}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-filled btn-danger"
+                  onClick={handleDeleteRoom}
+                  disabled={roomActionState.mode === "delete" && roomActionState.roomId === deleteDialogState.roomId}
+                >
+                  {roomActionState.mode === "delete" && roomActionState.roomId === deleteDialogState.roomId
+                    ? "Deleting..."
+                    : "Delete"}
                 </button>
               </div>
             </div>

@@ -30,6 +30,20 @@ export const createRoomRequest = (token, payload) =>
     },
   });
 
+export const renameRoomRequest = (token, roomId, payload) =>
+  roomsClient.put(`/${roomId}`, payload, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+export const deleteRoomRequest = (token, roomId) =>
+  roomsClient.delete(`/${roomId}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
 export const joinRoomByInviteRequest = (token, payload) =>
   roomsClient.post("/join", payload, {
     headers: {
