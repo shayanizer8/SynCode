@@ -5,6 +5,8 @@ const RoomMessage = require("../models/RoomMessage");
 const User = require("../models/User");
 
 const roomPresence = new Map();
+const roomDrafts = new Map();
+const roomCursors = new Map();
 
 const getPresenceUserIds = (roomId) => {
   const roomMap = roomPresence.get(roomId);
@@ -53,7 +55,75 @@ const removePresence = (roomId, userId) => {
 
   if (roomMap.size === 0) {
     roomPresence.delete(roomId);
+    roomDrafts.delete(roomId);
+    roomCursors.delete(roomId);
   }
+};
+
+const upsertCursor = (roomId, userId, payload) => {
+  if (!roomCursors.has(roomId)) {
+    roomCursors.set(roomId, new Map());
+  }
+
+  const roomMap = roomCursors.get(roomId);
+  roomMap.set(userId, {
+    userId,
+    filePath: payload.filePath,
+    lineNumber: payload.lineNumber,
+    column: payload.column,
+    userName: payload.userName,
+    updatedAt: new Date().toISOString(),
+  });
+};
+
+const removeCursor = (roomId, userId) => {
+  const roomMap = roomCursors.get(roomId);
+
+  if (!roomMap) {
+    return false;
+  }
+
+  const existed = roomMap.delete(userId);
+
+  if (roomMap.size === 0) {
+    roomCursors.delete(roomId);
+  }
+
+  return existed;
+};
+
+const getCursorSnapshot = (roomId) => {
+  const roomMap = roomCursors.get(roomId);
+
+  if (!roomMap) {
+    return [];
+  }
+
+  return Array.from(roomMap.values());
+};
+
+const upsertRoomDraftFile = (roomId, filePath, content, language) => {
+  if (!roomDrafts.has(roomId)) {
+    roomDrafts.set(roomId, new Map());
+  }
+
+  const draftMap = roomDrafts.get(roomId);
+  draftMap.set(filePath, {
+    path: filePath,
+    content,
+    language,
+    updatedAt: new Date().toISOString(),
+  });
+};
+
+const getRoomDraftSnapshot = (roomId) => {
+  const draftMap = roomDrafts.get(roomId);
+
+  if (!draftMap) {
+    return [];
+  }
+
+  return Array.from(draftMap.values());
 };
 
 const isMember = async (roomId, userId) => {
@@ -98,8 +168,17 @@ const initializeRealtime = (httpServer, allowedOrigin) => {
       }
 
       socket.leave(currentRoomId);
+      const cursorRemoved = removeCursor(currentRoomId, String(socket.data.userId));
       removePresence(currentRoomId, socket.data.userId);
       emitPresence(io, currentRoomId);
+
+      if (cursorRemoved) {
+        io.to(currentRoomId).emit("code:cursor:remove", {
+          roomId: currentRoomId,
+          userId: String(socket.data.userId),
+        });
+      }
+
       socket.data.roomId = null;
     };
 
@@ -129,6 +208,14 @@ const initializeRealtime = (httpServer, allowedOrigin) => {
         socket.data.roomId = roomId;
         addPresence(roomId, socket.data.userId);
         emitPresence(io, roomId);
+        socket.emit("code:snapshot", {
+          roomId,
+          files: getRoomDraftSnapshot(roomId),
+        });
+        socket.emit("code:cursor:snapshot", {
+          roomId,
+          cursors: getCursorSnapshot(roomId),
+        });
 
         if (typeof ack === "function") {
           ack({ ok: true });
@@ -207,6 +294,83 @@ const initializeRealtime = (httpServer, allowedOrigin) => {
         if (typeof ack === "function") {
           ack({ ok: false, message: "Failed to send message" });
         }
+      }
+    });
+
+    socket.on("code:update", async (payload) => {
+      try {
+        const roomId = typeof payload?.roomId === "string" ? payload.roomId.trim() : socket.data.roomId;
+        const filePath = typeof payload?.filePath === "string" ? payload.filePath.trim() : "";
+        const content = typeof payload?.content === "string" ? payload.content : "";
+        const language = typeof payload?.language === "string" ? payload.language.trim() : "";
+
+        if (!roomId || !filePath) {
+          return;
+        }
+
+        const allowed = await isMember(roomId, socket.data.userId);
+
+        if (!allowed) {
+          return;
+        }
+
+        upsertRoomDraftFile(roomId, filePath, content, language);
+
+        socket.to(roomId).emit("code:update", {
+          roomId,
+          filePath,
+          content,
+          language,
+          userId: socket.data.userId,
+          updatedAt: new Date().toISOString(),
+        });
+      } catch {
+        // Best-effort realtime sync event.
+      }
+    });
+
+    socket.on("code:cursor", async (payload) => {
+      try {
+        const roomId = typeof payload?.roomId === "string" ? payload.roomId.trim() : socket.data.roomId;
+        const filePath = typeof payload?.filePath === "string" ? payload.filePath.trim() : "";
+        const lineNumber = Number.isInteger(payload?.lineNumber) ? payload.lineNumber : 1;
+        const column = Number.isInteger(payload?.column) ? payload.column : 1;
+        const rawUserName = typeof payload?.userName === "string" ? payload.userName.trim() : "";
+        const fallbackName = String(socket.data.email || "User").split("@")[0] || "User";
+
+        if (!roomId || !filePath) {
+          return;
+        }
+
+        const allowed = await isMember(roomId, socket.data.userId);
+
+        if (!allowed) {
+          return;
+        }
+
+        const safeLineNumber = Math.max(1, lineNumber);
+        const safeColumn = Math.max(1, column);
+        const safeUserName = rawUserName || fallbackName;
+        const userId = String(socket.data.userId);
+
+        upsertCursor(roomId, userId, {
+          filePath,
+          lineNumber: safeLineNumber,
+          column: safeColumn,
+          userName: safeUserName,
+        });
+
+        socket.to(roomId).emit("code:cursor", {
+          roomId,
+          userId,
+          filePath,
+          lineNumber: safeLineNumber,
+          column: safeColumn,
+          userName: safeUserName,
+          updatedAt: new Date().toISOString(),
+        });
+      } catch {
+        // Best-effort cursor sync event.
       }
     });
 
