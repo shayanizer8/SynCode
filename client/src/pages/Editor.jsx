@@ -95,6 +95,7 @@ const areFileSetsEqual = (leftFiles, rightFiles) =>
   JSON.stringify(normalizeFilesForCompare(leftFiles)) === JSON.stringify(normalizeFilesForCompare(rightFiles));
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+const TYPING_LABEL_TTL_MS = 1200;
 
 const Editor = () => {
   const { roomId } = useParams();
@@ -139,6 +140,20 @@ const Editor = () => {
   const centerPanelRef = useRef(null);
   const chatBottomRef = useRef(null);
   const socketRef = useRef(null);
+  const isApplyingRemoteCodeRef = useRef(false);
+  const activeFileRef = useRef("");
+  const roomLanguageRef = useRef("Python");
+  const editorCodeRef = useRef("");
+  const codeEmitTimerRef = useRef(null);
+  const pendingCodePayloadRef = useRef(null);
+  const remoteApplyTimerRef = useRef(null);
+  const pendingRemoteUpdatesRef = useRef(new Map());
+  const monacoEditorRef = useRef(null);
+  const monacoRef = useRef(null);
+  const remoteCursorMapRef = useRef(new Map());
+  const cursorEmitTimerRef = useRef(null);
+  const cursorWidgetsRef = useRef(new Map());
+  const cursorExpiryTimersRef = useRef(new Map());
 
   const activeCollab = useMemo(() => onlineUserIds.length, [onlineUserIds]);
   const collaboratorsWithPresence = useMemo(
@@ -155,6 +170,173 @@ const Editor = () => {
     [collaborators, onlineUserIds]
   );
   const hasUnsavedChanges = useMemo(() => !areFileSetsEqual(files, savedFiles), [files, savedFiles]);
+
+  const clearCursorWidgets = () => {
+    const editor = monacoEditorRef.current;
+
+    if (!editor) {
+      cursorWidgetsRef.current.clear();
+      return;
+    }
+
+    cursorWidgetsRef.current.forEach((widget) => {
+      editor.removeContentWidget(widget);
+    });
+    cursorWidgetsRef.current.clear();
+  };
+
+  const clearCursorExpiryTimers = () => {
+    cursorExpiryTimersRef.current.forEach((timerId) => {
+      window.clearTimeout(timerId);
+    });
+    cursorExpiryTimersRef.current.clear();
+  };
+
+  const scheduleTypingLabelExpiry = (userId) => {
+    const existingTimer = cursorExpiryTimersRef.current.get(userId);
+
+    if (existingTimer) {
+      window.clearTimeout(existingTimer);
+    }
+
+    const timerId = window.setTimeout(() => {
+      remoteCursorMapRef.current.delete(userId);
+      cursorExpiryTimersRef.current.delete(userId);
+      applyRemoteCursorDecorations();
+    }, TYPING_LABEL_TTL_MS);
+
+    cursorExpiryTimersRef.current.set(userId, timerId);
+  };
+
+  const applyCursorWidgets = (activePath, model) => {
+    const editor = monacoEditorRef.current;
+    const monaco = monacoRef.current;
+
+    if (!editor || !monaco || !model) {
+      return;
+    }
+
+    const nextKeys = new Set();
+
+    remoteCursorMapRef.current.forEach((cursor) => {
+      if (!cursor || cursor.filePath !== activePath) {
+        return;
+      }
+
+      const userId = String(cursor.userId || "");
+
+      if (!userId) {
+        return;
+      }
+
+      const widgetKey = `remote-cursor-widget-${userId}`;
+      const safeLine = Math.max(1, Math.min(cursor.lineNumber || 1, model.getLineCount()));
+      const maxColumn = model.getLineMaxColumn(safeLine) || 1;
+      const safeColumn = Math.max(1, Math.min(cursor.column || 1, maxColumn));
+      nextKeys.add(widgetKey);
+
+      let widget = cursorWidgetsRef.current.get(widgetKey);
+
+      if (!widget) {
+        const domNode = document.createElement("span");
+        domNode.className = "remote-cursor-widget";
+        domNode.textContent = cursor.userName || "Collaborator";
+
+        widget = {
+          id: widgetKey,
+          domNode,
+          position: {
+            position: new monaco.Position(safeLine, safeColumn),
+            preference: [monaco.editor.ContentWidgetPositionPreference.ABOVE],
+          },
+          getId() {
+            return this.id;
+          },
+          getDomNode() {
+            return this.domNode;
+          },
+          getPosition() {
+            return this.position;
+          },
+        };
+
+        cursorWidgetsRef.current.set(widgetKey, widget);
+        editor.addContentWidget(widget);
+      }
+
+      widget.domNode.textContent = cursor.userName || "Collaborator";
+      widget.position = {
+        position: new monaco.Position(safeLine, safeColumn),
+        preference: [monaco.editor.ContentWidgetPositionPreference.ABOVE],
+      };
+      editor.layoutContentWidget(widget);
+    });
+
+    Array.from(cursorWidgetsRef.current.keys()).forEach((widgetKey) => {
+      if (nextKeys.has(widgetKey)) {
+        return;
+      }
+
+      const widget = cursorWidgetsRef.current.get(widgetKey);
+
+      if (widget) {
+        editor.removeContentWidget(widget);
+      }
+
+      cursorWidgetsRef.current.delete(widgetKey);
+    });
+  };
+
+  const applyRemoteCursorDecorations = () => {
+    const editor = monacoEditorRef.current;
+
+    if (!editor) {
+      return;
+    }
+
+    const model = editor.getModel();
+
+    if (!model) {
+      return;
+    }
+
+    applyCursorWidgets(activeFileRef.current, model);
+  };
+
+  const emitCursorPosition = () => {
+    const socket = socketRef.current;
+    const editor = monacoEditorRef.current;
+
+    if (!socket?.connected || !editor || !activeFileRef.current || !currentUser?.id) {
+      return;
+    }
+
+    const position = editor.getPosition();
+
+    if (!position) {
+      return;
+    }
+
+    socket.emit("code:cursor", {
+      roomId,
+      filePath: activeFileRef.current,
+      lineNumber: position.lineNumber,
+      column: position.column,
+      userName: currentUser?.name || "User",
+    });
+  };
+
+  const scheduleCursorEmit = (delay = 24) => {
+    if (cursorEmitTimerRef.current) {
+      window.clearTimeout(cursorEmitTimerRef.current);
+      cursorEmitTimerRef.current = null;
+    }
+
+    cursorEmitTimerRef.current = window.setTimeout(() => {
+      emitCursorPosition();
+      cursorEmitTimerRef.current = null;
+    }, delay);
+  };
 
   useEffect(() => {
     const fetchRoomData = async () => {
@@ -249,10 +431,123 @@ const Editor = () => {
 
     const nextFile = files.find((file) => file.path === activeFile);
 
-    if (nextFile) {
+    if (nextFile && nextFile.content !== editorCodeRef.current) {
       setEditorCode(nextFile.content);
     }
   }, [activeFile, files]);
+
+  useEffect(() => {
+    activeFileRef.current = activeFile;
+    applyRemoteCursorDecorations();
+  }, [activeFile]);
+
+  useEffect(() => {
+    roomLanguageRef.current = roomLanguage;
+  }, [roomLanguage]);
+
+  useEffect(() => {
+    editorCodeRef.current = editorCode;
+  }, [editorCode]);
+
+  const emitCodeUpdate = (filePath, content, language) => {
+    const socket = socketRef.current;
+
+    if (!socket?.connected || !filePath) {
+      return;
+    }
+
+    pendingCodePayloadRef.current = {
+      roomId,
+      filePath,
+      content,
+      language,
+    };
+
+    if (codeEmitTimerRef.current) {
+      return;
+    }
+
+    codeEmitTimerRef.current = window.setTimeout(() => {
+      const payload = pendingCodePayloadRef.current;
+      const currentSocket = socketRef.current;
+
+      if (payload && currentSocket?.connected) {
+        currentSocket.emit("code:update", payload);
+      }
+
+      pendingCodePayloadRef.current = null;
+      window.clearTimeout(codeEmitTimerRef.current);
+      codeEmitTimerRef.current = null;
+    }, 60);
+  };
+
+  const scheduleRemoteApply = () => {
+    if (remoteApplyTimerRef.current) {
+      return;
+    }
+
+    remoteApplyTimerRef.current = window.setTimeout(() => {
+      const updates = Array.from(pendingRemoteUpdatesRef.current.values());
+      pendingRemoteUpdatesRef.current.clear();
+
+      if (updates.length === 0) {
+        window.clearTimeout(remoteApplyTimerRef.current);
+        remoteApplyTimerRef.current = null;
+        return;
+      }
+
+      isApplyingRemoteCodeRef.current = true;
+
+      setFiles((prev) => {
+        const map = new Map(prev.map((file) => [file.path, file]));
+        let changed = false;
+
+        updates.forEach((update) => {
+          const existing = map.get(update.filePath);
+
+          if (!existing) {
+            map.set(update.filePath, {
+              path: update.filePath,
+              language: update.language || roomLanguageRef.current,
+              content: update.content,
+            });
+            changed = true;
+            return;
+          }
+
+          const nextLanguage = update.language || existing.language;
+
+          if (existing.content === update.content && existing.language === nextLanguage) {
+            return;
+          }
+
+          map.set(update.filePath, {
+            ...existing,
+            language: nextLanguage,
+            content: update.content,
+          });
+          changed = true;
+        });
+
+        return changed ? Array.from(map.values()).sort((a, b) => a.path.localeCompare(b.path)) : prev;
+      });
+
+      const activeUpdate = updates.find((update) => update.filePath === activeFileRef.current);
+
+      if (activeUpdate && activeUpdate.content !== editorCodeRef.current) {
+        setEditorCode(activeUpdate.content);
+      }
+
+      applyRemoteCursorDecorations();
+
+      window.setTimeout(() => {
+        isApplyingRemoteCodeRef.current = false;
+      }, 0);
+
+      window.clearTimeout(remoteApplyTimerRef.current);
+      remoteApplyTimerRef.current = null;
+    }, 80);
+  };
 
   useEffect(() => {
     const handleBeforeUnload = (event) => {
@@ -417,7 +712,7 @@ const Editor = () => {
   useEffect(() => {
     const token = getAuthToken();
 
-    if (!token || !roomId || isAccessDenied) {
+    if (!token || !roomId || isAccessDenied || isLoadingRoom) {
       return undefined;
     }
 
@@ -425,7 +720,6 @@ const Editor = () => {
       auth: {
         token,
       },
-      transports: ["websocket"],
     });
 
     socketRef.current = socket;
@@ -434,7 +728,10 @@ const Editor = () => {
       socket.emit("room:join", { roomId }, (ack) => {
         if (!ack?.ok) {
           setChatError(ack?.message || "Could not join realtime room.");
+          return;
         }
+
+        emitCodeUpdate(activeFileRef.current, editorCodeRef.current, roomLanguageRef.current);
       });
     });
 
@@ -470,6 +767,126 @@ const Editor = () => {
       });
     });
 
+    socket.on("code:snapshot", (payload) => {
+      if (payload?.roomId !== roomId) {
+        return;
+      }
+
+      const draftFiles = Array.isArray(payload.files) ? payload.files : [];
+
+      if (draftFiles.length === 0) {
+        return;
+      }
+
+      isApplyingRemoteCodeRef.current = true;
+
+      setFiles((prev) => {
+        const map = new Map(prev.map((file) => [file.path, file]));
+
+        draftFiles.forEach((draftFile) => {
+          const path = typeof draftFile.path === "string" ? draftFile.path : "";
+
+          if (!path) {
+            return;
+          }
+
+          const existing = map.get(path);
+          map.set(path, {
+            path,
+            language: draftFile.language || existing?.language || roomLanguageRef.current,
+            content: typeof draftFile.content === "string" ? draftFile.content : existing?.content || "",
+          });
+        });
+
+        return Array.from(map.values()).sort((a, b) => a.path.localeCompare(b.path));
+      });
+
+      const activeDraft = draftFiles.find((file) => file.path === activeFileRef.current);
+
+      if (activeDraft && typeof activeDraft.content === "string") {
+        setEditorCode(activeDraft.content);
+      }
+
+      window.setTimeout(() => {
+        isApplyingRemoteCodeRef.current = false;
+      }, 0);
+    });
+
+    socket.on("code:cursor:snapshot", (payload) => {
+      if (payload?.roomId !== roomId) {
+        return;
+      }
+
+      // Snapshot cursors represent last known positions and can look stale.
+      // For typing-only labels, we render only fresh "code:cursor" activity.
+    });
+
+    socket.on("code:cursor", (payload) => {
+      if (payload?.roomId !== roomId) {
+        return;
+      }
+
+      const userId = String(payload.userId || "");
+
+      if (!userId || String(currentUser?.id || "") === userId) {
+        return;
+      }
+
+      remoteCursorMapRef.current.set(userId, {
+        userId,
+        userName: payload.userName || "Collaborator",
+        filePath: payload.filePath || "",
+        lineNumber: payload.lineNumber || 1,
+        column: payload.column || 1,
+      });
+
+      scheduleTypingLabelExpiry(userId);
+      applyRemoteCursorDecorations();
+    });
+
+    socket.on("code:cursor:remove", (payload) => {
+      if (payload?.roomId !== roomId) {
+        return;
+      }
+
+      const userId = String(payload.userId || "");
+
+      if (!userId) {
+        return;
+      }
+
+      const existingTimer = cursorExpiryTimersRef.current.get(userId);
+
+      if (existingTimer) {
+        window.clearTimeout(existingTimer);
+        cursorExpiryTimersRef.current.delete(userId);
+      }
+
+      remoteCursorMapRef.current.delete(userId);
+      applyRemoteCursorDecorations();
+    });
+
+    socket.on("code:update", (payload) => {
+      if (payload?.roomId !== roomId) {
+        return;
+      }
+
+      const filePath = typeof payload.filePath === "string" ? payload.filePath : "";
+      const incomingContent = typeof payload.content === "string" ? payload.content : "";
+
+      if (!filePath) {
+        return;
+      }
+
+      pendingRemoteUpdatesRef.current.set(filePath, {
+        filePath,
+        content: incomingContent,
+        language: payload.language,
+      });
+
+      scheduleRemoteApply();
+    });
+
     socket.on("connect_error", () => {
       setChatError("Realtime connection failed. Falling back to API chat.");
     });
@@ -478,8 +895,31 @@ const Editor = () => {
       socket.disconnect();
       socketRef.current = null;
       setOnlineUserIds([]);
+
+      if (codeEmitTimerRef.current) {
+        window.clearTimeout(codeEmitTimerRef.current);
+        codeEmitTimerRef.current = null;
+      }
+
+      if (cursorEmitTimerRef.current) {
+        window.clearTimeout(cursorEmitTimerRef.current);
+        cursorEmitTimerRef.current = null;
+      }
+
+      pendingCodePayloadRef.current = null;
+
+      if (remoteApplyTimerRef.current) {
+        window.clearTimeout(remoteApplyTimerRef.current);
+        remoteApplyTimerRef.current = null;
+      }
+
+      pendingRemoteUpdatesRef.current.clear();
+      remoteCursorMapRef.current.clear();
+
+      clearCursorWidgets();
+      clearCursorExpiryTimers();
     };
-  }, [isAccessDenied, roomId]);
+  }, [currentUser?.id, isAccessDenied, isLoadingRoom, roomId]);
 
   useEffect(() => {
     if (!isResizingTerminal) {
@@ -540,6 +980,36 @@ const Editor = () => {
           : file
       )
     );
+
+    if (!isApplyingRemoteCodeRef.current && activeFile) {
+      emitCodeUpdate(activeFile, newContent, roomLanguage);
+    }
+  };
+
+  const handleEditorDidMount = (editor, monaco) => {
+    monacoEditorRef.current = editor;
+    monacoRef.current = monaco;
+
+    editor.onDidType(() => {
+      scheduleCursorEmit(0);
+    });
+
+    editor.onDidPaste(() => {
+      scheduleCursorEmit(0);
+    });
+
+    editor.onKeyDown((event) => {
+      if (
+        event.keyCode === monaco.KeyCode.Backspace
+        || event.keyCode === monaco.KeyCode.Delete
+        || event.keyCode === monaco.KeyCode.Enter
+        || event.keyCode === monaco.KeyCode.Tab
+      ) {
+        scheduleCursorEmit(0);
+      }
+    });
+
+    applyRemoteCursorDecorations();
   };
 
   const handleSave = async () => {
@@ -1142,6 +1612,7 @@ const Editor = () => {
                 theme="vs-dark"
                 value={editorCode}
                 onChange={handleEditorChange}
+                onMount={handleEditorDidMount}
                 options={{
                   fontFamily: "JetBrains Mono, Consolas, Monaco, monospace",
                   fontSize: 14,

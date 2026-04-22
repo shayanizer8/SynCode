@@ -2299,6 +2299,23 @@ a {
   }
 }
 
+.remote-cursor-widget {
+  display: inline-block;
+  margin-left: 4px;
+  transform: translateY(-12px);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #f8fafc;
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid rgba(148, 163, 184, 0.55);
+  border-radius: 999px;
+  padding: 2px 7px;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 5px 14px rgba(2, 6, 23, 0.45);
+}
+
 .terminal-panel {
   background: #0a0a0a;
   border-top: 1px solid #30363d;
