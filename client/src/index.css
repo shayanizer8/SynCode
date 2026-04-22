@@ -1382,6 +1382,33 @@ a {
   width: min(430px, 100%);
 }
 
+.room-action-modal {
+  width: min(430px, 100%);
+}
+
+.room-action-content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 10px;
+}
+
+.room-action-content h2 {
+  margin: 0;
+  font-size: 1.28rem;
+  letter-spacing: -0.02em;
+}
+
+.room-action-content p {
+  margin: 0;
+  color: var(--text-soft);
+  line-height: 1.5;
+}
+
+.room-action-content strong {
+  color: #e6edf3;
+}
+
 .logout-confirm-content {
   display: flex;
   flex-direction: column;
@@ -1406,6 +1433,16 @@ a {
   justify-content: flex-end;
   gap: 10px;
   margin-top: 4px;
+}
+
+.btn-danger {
+  background: #dc2626;
+  border-color: #dc2626;
+}
+
+.btn-danger:hover {
+  background: #b91c1c;
+  border-color: #b91c1c;
 }
 
 .room-field {
