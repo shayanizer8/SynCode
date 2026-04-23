@@ -64,12 +64,37 @@ const createUniqueInviteCode = async () => {
   throw new Error("Unable to generate unique invite code");
 };
 
+const getOwnerId = (ownerRef) => {
+  if (!ownerRef) {
+    return "";
+  }
+
+  if (typeof ownerRef === "string") {
+    return ownerRef;
+  }
+
+  if (ownerRef._id) {
+    return ownerRef._id.toString();
+  }
+
+  return ownerRef.toString();
+};
+
+const getOwnerName = (ownerRef) => {
+  if (!ownerRef || typeof ownerRef === "string") {
+    return "";
+  }
+
+  return ownerRef.name || "";
+};
+
 const serializeRoom = (room) => ({
   _id: room._id?.toString(),
   id: room._id?.toString(),
   name: room.name,
   language: room.language,
-  ownerId: room.ownerId?.toString(),
+  ownerId: getOwnerId(room.ownerId),
+  ownerName: getOwnerName(room.ownerId),
   isPrivate: room.isPrivate,
   inviteCode: room.inviteCode,
   createdAt: room.createdAt,
@@ -96,6 +121,31 @@ const getRoomAndMembership = async (roomId, userId) => {
   return { room, membership };
 };
 
+const attachOwnerNamesToRooms = async (rooms) => {
+  const ownerIdSet = new Set(
+    rooms
+      .map((room) => getOwnerId(room.ownerId))
+      .filter(Boolean)
+  );
+
+  if (ownerIdSet.size === 0) {
+    return rooms;
+  }
+
+  const owners = await User.find({ _id: { $in: Array.from(ownerIdSet) } }).select("name").lean();
+  const ownerNameMap = new Map(owners.map((owner) => [owner._id.toString(), owner.name || ""]));
+
+  return rooms.map((room) => {
+    const ownerId = getOwnerId(room.ownerId);
+    const currentOwnerName = getOwnerName(room.ownerId);
+
+    return {
+      ...room,
+      ownerName: currentOwnerName || ownerNameMap.get(ownerId) || "",
+    };
+  });
+};
+
 const getUserRooms = async (req, res) => {
   try {
     if (!ensureAuth(req, res)) {
@@ -105,8 +155,12 @@ const getUserRooms = async (req, res) => {
     const memberships = await RoomMember.find({ userId: req.user.userId }).sort({ joinedAt: -1 }).lean();
     const roomIds = memberships.map((member) => member.roomId);
 
-    const rooms = await Room.find({ _id: { $in: roomIds } }).sort({ updatedAt: -1 }).lean();
-    return res.status(200).json({ rooms: rooms.map(serializeRoom) });
+    const rooms = await Room.find({ _id: { $in: roomIds } })
+      .sort({ updatedAt: -1 })
+      .populate("ownerId", "name")
+      .lean();
+    const roomsWithOwnerNames = await attachOwnerNamesToRooms(rooms);
+    return res.status(200).json({ rooms: roomsWithOwnerNames.map(serializeRoom) });
   } catch (error) {
     console.error("Get rooms error:", error.message);
     return res.status(500).json({ message: "Server error" });
@@ -121,9 +175,13 @@ const getRecentRooms = async (req, res) => {
 
     const memberships = await RoomMember.find({ userId: req.user.userId }).sort({ joinedAt: -1 }).limit(8).lean();
     const roomIds = memberships.map((member) => member.roomId);
-    const rooms = await Room.find({ _id: { $in: roomIds } }).sort({ updatedAt: -1 }).lean();
+    const rooms = await Room.find({ _id: { $in: roomIds } })
+      .sort({ updatedAt: -1 })
+      .populate("ownerId", "name")
+      .lean();
+    const roomsWithOwnerNames = await attachOwnerNamesToRooms(rooms);
 
-    return res.status(200).json({ rooms: rooms.map(serializeRoom) });
+    return res.status(200).json({ rooms: roomsWithOwnerNames.map(serializeRoom) });
   } catch (error) {
     console.error("Get recent rooms error:", error.message);
     return res.status(500).json({ message: "Server error" });
