@@ -1190,6 +1190,30 @@ a {
   align-items: center;
 }
 
+.room-created-by {
+  margin-top: 8px;
+  font-size: 0.8rem;
+  color: #8f9db0;
+}
+
+.rooms-search-empty {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  padding: 24px;
+  text-align: center;
+}
+
+.rooms-search-empty h2 {
+  margin: 0 0 8px;
+  font-size: 1.2rem;
+}
+
+.rooms-search-empty p {
+  margin: 0;
+  color: var(--text-soft);
+}
+
 .room-collaborators {
   display: flex;
   align-items: center;

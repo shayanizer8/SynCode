@@ -13,15 +13,12 @@ import {
   ArrowRight,
   ArrowLeftRight,
   ChevronDown,
-  Filter,
   FolderClosed,
   Home,
-  LogOut,
   MoreVertical,
   Pencil,
   Plus,
   Search,
-  Settings,
   Trash2,
   X,
 } from "lucide-react";
@@ -31,7 +28,6 @@ import { getCurrentUserRequest } from "../services/authApi";
 const navItems = [
   { key: "home", label: "Home", icon: Home, active: true },
   { key: "projects", label: "My Projects", icon: FolderClosed, active: false },
-  { key: "settings", label: "Settings", icon: Settings, active: false },
 ];
 
 const badgeClassMap = {
@@ -95,6 +91,7 @@ const Dashboard = () => {
   const [createForm, setCreateForm] = useState(initialCreateFormState);
   const [createRoomError, setCreateRoomError] = useState("");
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const [joinInput, setJoinInput] = useState("");
   const [joinRoomError, setJoinRoomError] = useState("");
   const [isJoiningRoom, setIsJoiningRoom] = useState(false);
@@ -102,6 +99,7 @@ const Dashboard = () => {
   const [isRecentRoomsLoading, setIsRecentRoomsLoading] = useState(false);
   const [recentRoomsError, setRecentRoomsError] = useState("");
   const [currentUserId, setCurrentUserId] = useState("");
+  const [currentUserName, setCurrentUserName] = useState("");
   const [openRoomMenuId, setOpenRoomMenuId] = useState("");
   const [menuActionError, setMenuActionError] = useState("");
   const [roomActionState, setRoomActionState] = useState({
@@ -199,6 +197,7 @@ const Dashboard = () => {
       try {
         const response = await getCurrentUserRequest(token);
         setCurrentUserId(String(response.data?.user?._id || response.data?.user?.id || ""));
+        setCurrentUserName(String(response.data?.user?.name || ""));
       } catch (error) {
         if (error.response?.status === 401) {
           clearAuthToken();
@@ -222,12 +221,50 @@ const Dashboard = () => {
         ...room,
         id: String(room.id || room._id || ""),
         ownerId: String(room.ownerId || ""),
+        ownerName: String(room.ownerName || ""),
         edited: getRelativeEditedLabel(room.updatedAt),
         collaborators: Array.isArray(room.collaborators) ? room.collaborators : [],
         isOwner: String(room.ownerId || "") === String(currentUserId || ""),
+        creatorLabel:
+          String(room.ownerId || "") === String(currentUserId || "")
+            ? "Created by me"
+            : `Created by ${room.ownerName || "Unknown"}`,
       })),
     [rooms, currentUserId]
   );
+
+  const filteredRooms = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+
+    if (!query) {
+      return visibleRooms;
+    }
+
+    return visibleRooms.filter((room) => {
+      const searchableText = [room.name, room.language, room.ownerName, room.creatorLabel]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      return searchableText.includes(query);
+    });
+  }, [visibleRooms, searchQuery]);
+
+  const currentUserInitials = useMemo(() => {
+    const name = (currentUserName || "").trim();
+
+    if (!name) {
+      return "U";
+    }
+
+    const parts = name.split(/\s+/).filter(Boolean);
+
+    if (parts.length === 1) {
+      return parts[0].slice(0, 1).toUpperCase();
+    }
+
+    return `${parts[0].slice(0, 1)}${parts[parts.length - 1].slice(0, 1)}`.toUpperCase();
+  }, [currentUserName]);
 
   const handleToggleRoomMenu = (roomId) => {
     setMenuActionError("");
@@ -556,18 +593,9 @@ const Dashboard = () => {
         </nav>
 
         <div className="sidebar-bottom">
-          <button type="button" className="sidebar-avatar-wrap" aria-label="User account">
-            <span className="sidebar-avatar">SC</span>
+          <button type="button" className="sidebar-avatar-wrap" aria-label="Logout" onClick={handleLogout}>
+            <span className="sidebar-avatar">{currentUserInitials}</span>
             <span className="online-dot" aria-hidden="true"></span>
-          </button>
-          <button
-            type="button"
-            className="sidebar-icon-btn"
-            data-tooltip="Logout"
-            aria-label="Logout"
-            onClick={handleLogout}
-          >
-            <LogOut size={18} />
           </button>
         </div>
       </aside>
@@ -606,87 +634,99 @@ const Dashboard = () => {
             <div className="dashboard-search-row">
               <label className="dashboard-search" htmlFor="room-search">
                 <Search size={16} />
-                <input id="room-search" type="text" placeholder="Search rooms..." />
+                <input
+                  id="room-search"
+                  type="text"
+                  placeholder="Search rooms..."
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                />
               </label>
-              <button type="button" className="dashboard-filter-btn" aria-label="Filter rooms">
-                <Filter size={16} />
-              </button>
             </div>
 
-            <section className="rooms-grid" aria-label="Coding rooms">
-              {visibleRooms.map((room) => (
-                <article className="room-card" key={room.id}>
-                  <div className="room-card-top">
-                    <div className="room-badges">
-                      <span className={`lang-badge ${badgeClassMap[room.language] || "badge-python"}`}>
-                        {room.language}
-                      </span>
-                      {room.live ? (
-                        <span className="live-badge">
-                          <span className="live-dot" aria-hidden="true" />
-                          Live
+            {filteredRooms.length > 0 ? (
+              <section className="rooms-grid" aria-label="Coding rooms">
+                {filteredRooms.map((room) => (
+                  <article className="room-card" key={room.id}>
+                    <div className="room-card-top">
+                      <div className="room-badges">
+                        <span className={`lang-badge ${badgeClassMap[room.language] || "badge-python"}`}>
+                          {room.language}
                         </span>
+                        {room.live ? (
+                          <span className="live-badge">
+                            <span className="live-dot" aria-hidden="true" />
+                            Live
+                          </span>
+                        ) : null}
+                      </div>
+                      {room.isOwner ? (
+                        <button
+                          type="button"
+                          className="room-menu-btn"
+                          aria-label="Room options"
+                          onClick={() => handleToggleRoomMenu(room.id)}
+                        >
+                          <MoreVertical size={16} />
+                        </button>
                       ) : null}
                     </div>
-                    {room.isOwner ? (
-                      <button
-                        type="button"
-                        className="room-menu-btn"
-                        aria-label="Room options"
-                        onClick={() => handleToggleRoomMenu(room.id)}
-                      >
-                        <MoreVertical size={16} />
-                      </button>
-                    ) : null}
-                  </div>
 
-                  <h2>{room.name}</h2>
-                  <p>{room.edited}</p>
+                    <h2>{room.name}</h2>
+                    <p>{room.edited}</p>
 
-                  <div className="room-card-bottom">
-                    <div className="room-collaborators" aria-label="Collaborators">
-                      {room.collaborators.map((collab, index) => (
-                        <span
-                          className={`room-avatar ${avatarToneClass[index % avatarToneClass.length]}`}
-                          key={`${room.id}-${collab}`}
-                          style={{ marginLeft: index === 0 ? 0 : -8 }}
+                    <div className="room-card-bottom">
+                      <div className="room-collaborators" aria-label="Collaborators">
+                        {room.collaborators.map((collab, index) => (
+                          <span
+                            className={`room-avatar ${avatarToneClass[index % avatarToneClass.length]}`}
+                            key={`${room.id}-${collab}`}
+                            style={{ marginLeft: index === 0 ? 0 : -8 }}
+                          >
+                            {collab}
+                          </span>
+                        ))}
+                      </div>
+
+                      <Link to={`/editor/${room.id}`} className="room-open-btn">
+                        Open Room
+                        <ArrowRight size={14} />
+                      </Link>
+                    </div>
+
+                    <p className="room-created-by">{room.creatorLabel}</p>
+
+                    {room.isOwner && openRoomMenuId === room.id ? (
+                      <div className="room-menu-popup" role="menu" aria-label="Room actions">
+                        <button
+                          type="button"
+                          className="room-menu-item"
+                          role="menuitem"
+                          onClick={() => openRenameDialog(room)}
+                          disabled={roomActionState.mode !== "" && roomActionState.roomId === room.id}
                         >
-                          {collab}
-                        </span>
-                      ))}
-                    </div>
-
-                    <Link to={`/editor/${room.id}`} className="room-open-btn">
-                      Open Room
-                      <ArrowRight size={14} />
-                    </Link>
-                  </div>
-
-                  {room.isOwner && openRoomMenuId === room.id ? (
-                    <div className="room-menu-popup" role="menu" aria-label="Room actions">
-                      <button
-                        type="button"
-                        className="room-menu-item"
-                        role="menuitem"
-                        onClick={() => openRenameDialog(room)}
-                        disabled={roomActionState.mode !== "" && roomActionState.roomId === room.id}
-                      >
-                        <Pencil size={14} /> Rename
-                      </button>
-                      <button
-                        type="button"
-                        className="room-menu-item delete"
-                        role="menuitem"
-                        onClick={() => openDeleteDialog(room)}
-                        disabled={roomActionState.mode !== "" && roomActionState.roomId === room.id}
-                      >
-                        <Trash2 size={14} /> Delete
-                      </button>
-                    </div>
-                  ) : null}
-                </article>
-              ))}
-            </section>
+                          <Pencil size={14} /> Rename
+                        </button>
+                        <button
+                          type="button"
+                          className="room-menu-item delete"
+                          role="menuitem"
+                          onClick={() => openDeleteDialog(room)}
+                          disabled={roomActionState.mode !== "" && roomActionState.roomId === room.id}
+                        >
+                          <Trash2 size={14} /> Delete
+                        </button>
+                      </div>
+                    ) : null}
+                  </article>
+                ))}
+              </section>
+            ) : (
+              <section className="rooms-search-empty" aria-label="No matching rooms">
+                <h2>No rooms found</h2>
+                <p>Try a different room name, language, or creator.</p>
+              </section>
+            )}
           </>
         ) : null}
 
