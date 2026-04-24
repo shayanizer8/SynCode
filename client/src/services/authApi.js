@@ -13,6 +13,8 @@ export const registerRequest = (payload) => authClient.post("/register", payload
 
 export const loginRequest = (payload) => authClient.post("/login", payload);
 
+export const googleAuthRequest = (payload) => authClient.post("/google", payload);
+
 export const getCurrentUserRequest = (token) =>
   authClient.get("/me", {
     headers: {

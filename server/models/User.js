@@ -15,9 +15,22 @@ const userSchema = new mongoose.Schema(
       trim: true,
       lowercase: true,
     },
+    authProvider: {
+      type: String,
+      enum: ["local", "google"],
+      default: "local",
+    },
+    googleId: {
+      type: String,
+      unique: true,
+      sparse: true,
+      trim: true,
+    },
     password: {
       type: String,
-      required: true,
+      required() {
+        return this.authProvider !== "google";
+      },
     },
   },
   {
@@ -26,7 +39,7 @@ const userSchema = new mongoose.Schema(
 );
 
 userSchema.pre("save", async function () {
-  if (!this.isModified("password")) {
+  if (!this.password || !this.isModified("password")) {
     return;
   }
 

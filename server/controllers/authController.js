@@ -1,6 +1,16 @@
 const User = require("../models/User");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const { OAuth2Client } = require("google-auth-library");
+
+const googleClient = new OAuth2Client();
+
+const signAppToken = (user) =>
+  jwt.sign(
+    { userId: user._id.toString(), email: user.email },
+    process.env.JWT_SECRET,
+    { expiresIn: "7d" }
+  );
 
 const registerUser = async (req, res) => {
   try {
@@ -20,6 +30,7 @@ const registerUser = async (req, res) => {
     await User.create({
       name: name.trim(),
       email: normalizedEmail,
+      authProvider: "local",
       password,
     });
 
@@ -49,6 +60,10 @@ const loginUser = async (req, res) => {
       return res.status(401).json({ message: "Invalid email or password" });
     }
 
+    if (user.authProvider === "google" || !user.password) {
+      return res.status(400).json({ message: "This account uses Google sign-in. Continue with Google." });
+    }
+
     const isMatch = await bcrypt.compare(password, user.password);
 
     if (!isMatch) {
@@ -59,16 +74,85 @@ const loginUser = async (req, res) => {
       return res.status(500).json({ message: "JWT secret is not configured" });
     }
 
-    const token = jwt.sign(
-      { userId: user._id.toString(), email: user.email },
-      process.env.JWT_SECRET,
-      { expiresIn: "7d" }
-    );
+    const token = signAppToken(user);
 
     return res.status(200).json({ token });
   } catch (error) {
     console.error("Login error:", error.message);
     return res.status(500).json({ message: "Server error" });
+  }
+};
+
+const googleAuthUser = async (req, res) => {
+  try {
+    const { idToken } = req.body;
+
+    if (!idToken || typeof idToken !== "string") {
+      return res.status(400).json({ message: "Google ID token is required" });
+    }
+
+    if (!process.env.GOOGLE_CLIENT_ID) {
+      return res.status(500).json({ message: "Google client ID is not configured" });
+    }
+
+    if (!process.env.JWT_SECRET) {
+      return res.status(500).json({ message: "JWT secret is not configured" });
+    }
+
+    const ticket = await googleClient.verifyIdToken({
+      idToken,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+
+    const payload = ticket.getPayload();
+    const googleSub = payload?.sub;
+    const email = payload?.email?.trim().toLowerCase();
+    const emailVerified = payload?.email_verified;
+    const name = payload?.name?.trim() || "Google User";
+
+    if (!googleSub || !email || !emailVerified) {
+      return res.status(401).json({ message: "Invalid Google account payload" });
+    }
+
+    let user = await User.findOne({
+      $or: [{ googleId: googleSub }, { email }],
+    });
+
+    if (!user) {
+      user = await User.create({
+        name,
+        email,
+        authProvider: "google",
+        googleId: googleSub,
+      });
+    } else {
+      let isUpdated = false;
+
+      if (!user.googleId) {
+        user.googleId = googleSub;
+        isUpdated = true;
+      }
+
+      if (user.authProvider !== "google") {
+        user.authProvider = "google";
+        isUpdated = true;
+      }
+
+      if (!user.name && name) {
+        user.name = name;
+        isUpdated = true;
+      }
+
+      if (isUpdated) {
+        await user.save();
+      }
+    }
+
+    const token = signAppToken(user);
+    return res.status(200).json({ token });
+  } catch (error) {
+    console.error("Google auth error:", error.message);
+    return res.status(401).json({ message: "Google authentication failed" });
   }
 };
 
@@ -100,5 +184,6 @@ const getCurrentUser = async (req, res) => {
 module.exports = {
   registerUser,
   loginUser,
+  googleAuthUser,
   getCurrentUser,
 };

@@ -32,20 +32,29 @@ import {
 const languageLabelMap = {
   Python: "python",
   JavaScript: "javascript",
+  TypeScript: "typescript",
   Java: "java",
   "C++": "cpp",
+  Go: "go",
+  Rust: "rust",
+  Dart: "dart",
 };
 
 const fileExtensionMap = {
   Python: "py",
   JavaScript: "js",
+  TypeScript: "ts",
   Java: "java",
   "C++": "cpp",
+  Go: "go",
+  Rust: "rs",
+  Dart: "dart",
 };
 
 const defaultFileByLanguage = {
   Python: { path: "main.py", content: "print('Welcome to SynCode')\n" },
   JavaScript: { path: "main.js", content: "console.log('Welcome to SynCode');\n" },
+  TypeScript: { path: "main.ts", content: "console.log('Welcome to SynCode');\n" },
   Java: {
     path: "Main.java",
     content:
@@ -55,6 +64,18 @@ const defaultFileByLanguage = {
     path: "main.cpp",
     content:
       "#include <iostream>\n\nint main() {\n    std::cout << \"Welcome to SynCode\" << std::endl;\n    return 0;\n}\n",
+  },
+  Go: {
+    path: "main.go",
+    content: "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"Welcome to SynCode\")\n}\n",
+  },
+  Rust: {
+    path: "main.rs",
+    content: "fn main() {\n    println!(\"Welcome to SynCode\");\n}\n",
+  },
+  Dart: {
+    path: "main.dart",
+    content: "void main() {\n  print('Welcome to SynCode');\n}\n",
   },
 };
 

@@ -1,29 +1,6 @@
 import { Link } from "react-router-dom";
 import { ArrowLeftRight } from "lucide-react";
 
-const features = [
-  {
-    icon: "⚡",
-    title: "Real-Time Editing",
-    description: "See every keystroke instantly. No lag, no conflicts.",
-  },
-  {
-    icon: "💬",
-    title: "Built-In Chat",
-    description: "Communicate without leaving the editor.",
-  },
-  {
-    icon: "▶",
-    title: "Code Execution",
-    description: "Run Python, JavaScript, C++, Java directly in the browser.",
-  },
-  {
-    icon: "🔒",
-    title: "Private Rooms",
-    description: "Invite-only rooms with unique shareable links.",
-  },
-];
-
 const steps = [
   {
     number: "01",
@@ -78,9 +55,6 @@ const Landing = () => {
                 <Link to="/register" className="btn btn-filled btn-large">
                   Get Started Free
                 </Link>
-                <button type="button" className="btn btn-ghost btn-large">
-                  Try a Demo
-                </button>
               </div>
 
               <p className="social-proof">Trusted by programmers</p>
@@ -117,23 +91,6 @@ async function initRoom() {
           </div>
         </section>
 
-        <section className="features-section" id="features">
-          <div className="landing-container">
-            <h2>Everything you need to code together</h2>
-            <div className="feature-grid">
-              {features.map((feature) => (
-                <article key={feature.title} className="feature-card">
-                  <span className="feature-icon" aria-hidden="true">
-                    {feature.icon}
-                  </span>
-                  <h3>{feature.title}</h3>
-                  <p>{feature.description}</p>
-                </article>
-              ))}
-            </div>
-          </div>
-        </section>
-
         <section className="workflow-section">
           <div className="landing-container">
             <h2>Get started in seconds</h2>
@@ -160,7 +117,6 @@ async function initRoom() {
 
           <nav className="footer-links" aria-label="Footer links">
             <a href="#">About</a>
-            <a href="#features">Features</a>
             <Link to="/login">Login</Link>
             <Link to="/register">Sign Up</Link>
           </nav>

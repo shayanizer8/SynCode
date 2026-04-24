@@ -3,6 +3,10 @@ const languageIdMap = {
   JavaScript: 63,
   Java: 62,
   "C++": 54,
+  Go: 107,
+  Rust: 108,
+  TypeScript: 101,
+  Dart: 90,
 };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

@@ -59,7 +59,7 @@ a {
   display: inline-flex;
   align-items: center;
   gap: 12px;
-  margin-left: -50px;
+  margin-left: -100px;
   text-decoration: none;
   font-weight: 700;
   font-size: 1.38rem;
@@ -80,7 +80,8 @@ a {
 
 .navbar-actions {
   display: flex;
-  gap: 30px;
+  gap: 50px;
+  transform: translateX(70px);
 }
 
 .btn {
@@ -810,6 +811,34 @@ a {
   border-color: #4a5560;
 }
 
+.google-auth-wrap {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.google-auth-button {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  min-height: 44px;
+}
+
+.google-auth-button.is-disabled {
+  pointer-events: none;
+  opacity: 0.7;
+}
+
+.google-auth-hidden {
+  position: absolute;
+  left: -9999px;
+  top: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
 .login-card {
   max-width: 420px;
 }
@@ -1118,12 +1147,32 @@ a {
 
 .badge-java {
   background: rgba(249, 115, 22, 0.18);
-  color: #ffb36f;
+  color: #D22B2B;
 }
 
 .badge-cpp {
   background: rgba(139, 92, 246, 0.2);
   color: #b99bff;
+}
+
+.badge-go {
+  background: rgba(34, 197, 94, 0.14);
+  color: #7de3aa;
+}
+
+.badge-rust {
+  background: rgba(249, 115, 22, 0.14);
+  color: #ffb36f;
+}
+
+.badge-typescript {
+  background: rgba(59, 130, 246, 0.18);
+  color: #93c5fd;
+}
+
+.badge-dart {
+  background: rgba(6, 182, 212, 0.16);
+  color: #67e8f9;
 }
 
 .live-badge {
