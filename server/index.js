@@ -7,6 +7,7 @@ const connectDB = require("./config/db");
 const testRoutes = require("./routes/testRoutes");
 const authRoutes = require("./routes/authRoutes");
 const roomsRoutes = require("./routes/roomsRoutes");
+const invitationsRoutes = require("./routes/invitationsRoutes");
 const executionRoutes = require("./routes/executionRoutes");
 const { initializeRealtime } = require("./socket/realtime");
 
@@ -23,6 +24,7 @@ app.use(express.json());
 app.use("/api", testRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/rooms", roomsRoutes);
+app.use("/api/invitations", invitationsRoutes);
 app.use("/api/execute", executionRoutes);
 
 initializeRealtime(httpServer, CLIENT_ORIGIN);

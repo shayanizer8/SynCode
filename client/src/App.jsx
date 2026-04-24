@@ -5,6 +5,7 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
 import Editor from "./pages/Editor";
+import Invitations from "./pages/Invitations";
 import { getCurrentUserRequest } from "./services/authApi";
 import { clearAuthToken, getAuthToken } from "./services/tokenStorage";
 
@@ -67,6 +68,14 @@ function App() {
           element={
             <ProtectedRoute>
               <Editor />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/invitations"
+          element={
+            <ProtectedRoute>
+              <Invitations />
             </ProtectedRoute>
           }
         />

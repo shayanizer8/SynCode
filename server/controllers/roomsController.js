@@ -1,166 +1,96 @@
+const crypto = require("crypto");
+
 const Room = require("../models/Room");
-const RoomFile = require("../models/RoomFile");
 const RoomMember = require("../models/RoomMember");
+const RoomFile = require("../models/RoomFile");
 const RoomMessage = require("../models/RoomMessage");
 const User = require("../models/User");
+const RoomInvitation = require("../models/RoomInvitation");
 
-const ALLOWED_LANGUAGES = ["Python", "JavaScript", "C++", "Java"];
+const normalizeEmailList = (value) => {
+  if (!value) {
+    return [];
+  }
 
-const starterFileMap = {
-  Python: {
-    path: "main.py",
-    content: "print('Welcome to SynCode')\n",
-  },
-  JavaScript: {
-    path: "main.js",
-    content: "console.log('Welcome to SynCode');\n",
-  },
-  "C++": {
-    path: "main.cpp",
-    content:
-      "#include <iostream>\n\nint main() {\n    std::cout << \"Welcome to SynCode\" << std::endl;\n    return 0;\n}\n",
-  },
-  Java: {
-    path: "Main.java",
-    content:
-      "public class Main {\n    public static void main(String[] args) {\n        System.out.println(\"Welcome to SynCode\");\n    }\n}\n",
-  },
+  if (Array.isArray(value)) {
+    return Array.from(
+      new Set(
+        value
+          .flatMap((item) => String(item || "").split(/[,\s;]+/g))
+          .map((item) => item.trim().toLowerCase())
+          .filter(Boolean)
+      )
+    );
+  }
+
+  if (typeof value === "string") {
+    return Array.from(
+      new Set(
+        value
+          .split(/[,\s;]+/g)
+          .map((item) => item.trim().toLowerCase())
+          .filter(Boolean)
+      )
+    );
+  }
+
+  return [];
 };
 
-const getInviteCodeFromInput = (inputValue) => {
-  if (!inputValue || typeof inputValue !== "string") {
-    return "";
-  }
+const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
-  const raw = inputValue.trim();
-
-  try {
-    const parsed = new URL(raw);
-    const fromQuery = parsed.searchParams.get("invite");
-
-    if (fromQuery) {
-      return fromQuery.trim().toUpperCase();
-    }
-
-    const lastSegment = parsed.pathname.split("/").filter(Boolean).pop();
-    return (lastSegment || "").trim().toUpperCase();
-  } catch {
-    return raw.toUpperCase();
-  }
-};
-
-const generateInviteCode = () => Math.random().toString(36).slice(2, 10).toUpperCase();
-
-const createUniqueInviteCode = async () => {
-  for (let attempt = 0; attempt < 10; attempt += 1) {
-    const code = generateInviteCode();
-    const existing = await Room.findOne({ inviteCode: code }).select("_id");
-
-    if (!existing) {
-      return code;
-    }
-  }
-
-  throw new Error("Unable to generate unique invite code");
-};
-
-const getOwnerId = (ownerRef) => {
-  if (!ownerRef) {
-    return "";
-  }
-
-  if (typeof ownerRef === "string") {
-    return ownerRef;
-  }
-
-  if (ownerRef._id) {
-    return ownerRef._id.toString();
-  }
-
-  return ownerRef.toString();
-};
-
-const getOwnerName = (ownerRef) => {
-  if (!ownerRef || typeof ownerRef === "string") {
-    return "";
-  }
-
-  return ownerRef.name || "";
-};
-
-const serializeRoom = (room) => ({
-  _id: room._id?.toString(),
-  id: room._id?.toString(),
-  name: room.name,
-  language: room.language,
-  ownerId: getOwnerId(room.ownerId),
-  ownerName: getOwnerName(room.ownerId),
-  isPrivate: room.isPrivate,
-  inviteCode: room.inviteCode,
-  createdAt: room.createdAt,
-  updatedAt: room.updatedAt,
-});
-
-const ensureAuth = (req, res) => {
+const requireAuth = (req, res) => {
   if (!req.user || !req.user.userId) {
     res.status(401).json({ message: "Not authorized" });
     return false;
   }
-
   return true;
 };
 
-const getRoomAndMembership = async (roomId, userId) => {
-  const room = await Room.findById(roomId).lean();
-
-  if (!room) {
-    return { room: null, membership: null };
-  }
-
-  const membership = await RoomMember.findOne({ roomId: room._id, userId }).lean();
-  return { room, membership };
+const ensureRoomMember = async (roomId, userId) => {
+  const membership = await RoomMember.findOne({ roomId, userId }).select("_id role").lean();
+  return membership;
 };
 
-const attachOwnerNamesToRooms = async (rooms) => {
-  const ownerIdSet = new Set(
-    rooms
-      .map((room) => getOwnerId(room.ownerId))
-      .filter(Boolean)
-  );
+const toRoomSummary = async (room, currentUserId) => {
+  const owner = await User.findById(room.ownerId).select("name").lean();
+  const members = await RoomMember.find({ roomId: room._id }).select("userId").lean();
+  const memberUserIds = members.map((m) => m.userId);
+  const users = await User.find({ _id: { $in: memberUserIds } }).select("name").lean();
+  const initials = users
+    .map((u) => (u?.name ? String(u.name).trim().slice(0, 1).toUpperCase() : "U"))
+    .slice(0, 5);
 
-  if (ownerIdSet.size === 0) {
-    return rooms;
-  }
-
-  const owners = await User.find({ _id: { $in: Array.from(ownerIdSet) } }).select("name").lean();
-  const ownerNameMap = new Map(owners.map((owner) => [owner._id.toString(), owner.name || ""]));
-
-  return rooms.map((room) => {
-    const ownerId = getOwnerId(room.ownerId);
-    const currentOwnerName = getOwnerName(room.ownerId);
-
-    return {
-      ...room,
-      ownerName: currentOwnerName || ownerNameMap.get(ownerId) || "",
-    };
-  });
+  return {
+    _id: room._id,
+    id: room._id.toString(),
+    ownerId: room.ownerId.toString(),
+    ownerName: owner?.name || "Unknown",
+    name: room.name,
+    language: room.language,
+    isPrivate: room.isPrivate,
+    inviteCode: room.inviteCode,
+    collaborators: initials,
+    updatedAt: room.updatedAt,
+    createdAt: room.createdAt,
+    live: false,
+    isOwner: String(room.ownerId) === String(currentUserId),
+  };
 };
+
+const generateInviteCode = () => crypto.randomBytes(4).toString("hex").toUpperCase();
 
 const getUserRooms = async (req, res) => {
   try {
-    if (!ensureAuth(req, res)) {
-      return;
-    }
+    if (!requireAuth(req, res)) return;
 
-    const memberships = await RoomMember.find({ userId: req.user.userId }).sort({ joinedAt: -1 }).lean();
-    const roomIds = memberships.map((member) => member.roomId);
+    const memberships = await RoomMember.find({ userId: req.user.userId }).select("roomId").lean();
+    const roomIds = memberships.map((m) => m.roomId);
 
-    const rooms = await Room.find({ _id: { $in: roomIds } })
-      .sort({ updatedAt: -1 })
-      .populate("ownerId", "name")
-      .lean();
-    const roomsWithOwnerNames = await attachOwnerNamesToRooms(rooms);
-    return res.status(200).json({ rooms: roomsWithOwnerNames.map(serializeRoom) });
+    const rooms = await Room.find({ _id: { $in: roomIds } }).sort({ updatedAt: -1 }).lean();
+    const mapped = await Promise.all(rooms.map((room) => toRoomSummary(room, req.user.userId)));
+
+    return res.status(200).json({ rooms: mapped });
   } catch (error) {
     console.error("Get rooms error:", error.message);
     return res.status(500).json({ message: "Server error" });
@@ -169,19 +99,17 @@ const getUserRooms = async (req, res) => {
 
 const getRecentRooms = async (req, res) => {
   try {
-    if (!ensureAuth(req, res)) {
-      return;
-    }
+    if (!requireAuth(req, res)) return;
 
-    const memberships = await RoomMember.find({ userId: req.user.userId }).sort({ joinedAt: -1 }).limit(8).lean();
-    const roomIds = memberships.map((member) => member.roomId);
-    const rooms = await Room.find({ _id: { $in: roomIds } })
+    const memberships = await RoomMember.find({ userId: req.user.userId })
       .sort({ updatedAt: -1 })
-      .populate("ownerId", "name")
+      .limit(6)
+      .select("roomId")
       .lean();
-    const roomsWithOwnerNames = await attachOwnerNamesToRooms(rooms);
+    const roomIds = memberships.map((m) => m.roomId);
 
-    return res.status(200).json({ rooms: roomsWithOwnerNames.map(serializeRoom) });
+    const rooms = await Room.find({ _id: { $in: roomIds } }).select("name language").lean();
+    return res.status(200).json({ rooms });
   } catch (error) {
     console.error("Get recent rooms error:", error.message);
     return res.status(500).json({ message: "Server error" });
@@ -190,45 +118,59 @@ const getRecentRooms = async (req, res) => {
 
 const createRoom = async (req, res) => {
   try {
-    if (!ensureAuth(req, res)) {
-      return;
-    }
+    if (!requireAuth(req, res)) return;
 
-    const { name, language = "Python", isPrivate = true } = req.body;
+    const { name, language = "Python", isPrivate = true } = req.body || {};
 
-    if (!name || !name.trim()) {
+    if (!name || typeof name !== "string" || !name.trim()) {
       return res.status(400).json({ message: "Room name is required" });
     }
 
-    if (!ALLOWED_LANGUAGES.includes(language)) {
-      return res.status(400).json({ message: "Unsupported room language" });
+    const ownerId = req.user.userId;
+
+    let inviteCode = generateInviteCode();
+    for (let attempts = 0; attempts < 5; attempts += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      const exists = await Room.findOne({ inviteCode }).select("_id").lean();
+      if (!exists) break;
+      inviteCode = generateInviteCode();
     }
 
-    const inviteCode = await createUniqueInviteCode();
-
     const room = await Room.create({
+      ownerId,
       name: name.trim(),
       language,
-      ownerId: req.user.userId,
-      isPrivate,
+      isPrivate: Boolean(isPrivate),
       inviteCode,
     });
 
     await RoomMember.create({
       roomId: room._id,
-      userId: req.user.userId,
+      userId: ownerId,
       role: "owner",
     });
 
-    const starter = starterFileMap[language] || starterFileMap.Python;
-    await RoomFile.create({
-      roomId: room._id,
-      path: starter.path,
-      language,
-      content: starter.content,
-    });
+    const rawInviteEmails = req.body?.inviteEmails ?? req.body?.inviteEmail;
+    const inviteEmails = normalizeEmailList(rawInviteEmails).filter(isValidEmail);
 
-    return res.status(201).json({ room: serializeRoom(room) });
+    if (inviteEmails.length > 0) {
+      const existingUsers = await User.find({ email: { $in: inviteEmails } }).select("_id email").lean();
+      const userIdByEmail = new Map(existingUsers.map((u) => [String(u.email).toLowerCase(), u._id]));
+
+      const invitationsToInsert = inviteEmails.map((email) => ({
+        roomId: room._id,
+        inviterId: ownerId,
+        inviteeEmail: email,
+        inviteeUserId: userIdByEmail.get(email) || null,
+        status: "pending",
+      }));
+
+      await RoomInvitation.insertMany(invitationsToInsert, { ordered: false }).catch(() => {
+        // Best-effort: ignore duplicates/races.
+      });
+    }
+
+    return res.status(201).json({ room });
   } catch (error) {
     console.error("Create room error:", error.message);
     return res.status(500).json({ message: "Server error" });
@@ -237,35 +179,32 @@ const createRoom = async (req, res) => {
 
 const renameRoom = async (req, res) => {
   try {
-    if (!ensureAuth(req, res)) {
-      return;
-    }
+    if (!requireAuth(req, res)) return;
 
     const { roomId } = req.params;
-    const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+    const { name } = req.body || {};
 
     if (!roomId) {
-      return res.status(400).json({ message: "Room id is required" });
+      return res.status(400).json({ message: "roomId is required" });
     }
 
-    if (!name) {
+    if (!name || typeof name !== "string" || !name.trim()) {
       return res.status(400).json({ message: "Room name is required" });
     }
 
     const room = await Room.findById(roomId);
-
     if (!room) {
       return res.status(404).json({ message: "Room not found" });
     }
 
-    if (room.ownerId.toString() !== req.user.userId) {
+    if (String(room.ownerId) !== String(req.user.userId)) {
       return res.status(403).json({ message: "Only the room owner can rename this room" });
     }
 
-    room.name = name;
+    room.name = name.trim();
     await room.save();
 
-    return res.status(200).json({ room: serializeRoom(room) });
+    return res.status(200).json({ room });
   } catch (error) {
     console.error("Rename room error:", error.message);
     return res.status(500).json({ message: "Server error" });
@@ -274,31 +213,28 @@ const renameRoom = async (req, res) => {
 
 const deleteRoom = async (req, res) => {
   try {
-    if (!ensureAuth(req, res)) {
-      return;
-    }
+    if (!requireAuth(req, res)) return;
 
     const { roomId } = req.params;
-
     if (!roomId) {
-      return res.status(400).json({ message: "Room id is required" });
+      return res.status(400).json({ message: "roomId is required" });
     }
 
-    const room = await Room.findById(roomId).lean();
-
+    const room = await Room.findById(roomId);
     if (!room) {
       return res.status(404).json({ message: "Room not found" });
     }
 
-    if (room.ownerId.toString() !== req.user.userId) {
+    if (String(room.ownerId) !== String(req.user.userId)) {
       return res.status(403).json({ message: "Only the room owner can delete this room" });
     }
 
     await Promise.all([
-      RoomFile.deleteMany({ roomId: room._id }),
-      RoomMember.deleteMany({ roomId: room._id }),
-      RoomMessage.deleteMany({ roomId: room._id }),
-      Room.deleteOne({ _id: room._id }),
+      RoomFile.deleteMany({ roomId }),
+      RoomMessage.deleteMany({ roomId }),
+      RoomMember.deleteMany({ roomId }),
+      RoomInvitation.deleteMany({ roomId }),
+      Room.deleteOne({ _id: roomId }),
     ]);
 
     return res.status(200).json({ message: "Room deleted" });
@@ -308,105 +244,26 @@ const deleteRoom = async (req, res) => {
   }
 };
 
-const joinRoomByInvite = async (req, res) => {
-  try {
-    if (!ensureAuth(req, res)) {
-      return;
-    }
-
-    const { inviteCodeOrLink } = req.body;
-    const inviteCode = getInviteCodeFromInput(inviteCodeOrLink);
-
-    if (!inviteCode) {
-      return res.status(400).json({ message: "Invite code or link is required" });
-    }
-
-    const room = await Room.findOne({ inviteCode }).lean();
-
-    if (!room) {
-      return res.status(404).json({ message: "Room not found for this invite" });
-    }
-
-    const existingMembership = await RoomMember.findOne({ roomId: room._id, userId: req.user.userId });
-
-    if (!existingMembership) {
-      await RoomMember.create({
-        roomId: room._id,
-        userId: req.user.userId,
-        role: "editor",
-      });
-    }
-
-    return res.status(200).json({ room: serializeRoom(room) });
-  } catch (error) {
-    console.error("Join room by invite error:", error.message);
-    return res.status(500).json({ message: "Server error" });
-  }
-};
-
-const joinRoomById = async (req, res) => {
-  try {
-    if (!ensureAuth(req, res)) {
-      return;
-    }
-
-    const { roomId } = req.params;
-
-    if (!roomId) {
-      return res.status(400).json({ message: "Room id is required" });
-    }
-
-    const room = await Room.findById(roomId).lean();
-
-    if (!room) {
-      return res.status(404).json({ message: "Room not found" });
-    }
-
-    const existingMembership = await RoomMember.findOne({ roomId: room._id, userId: req.user.userId });
-
-    if (!existingMembership) {
-      await RoomMember.create({
-        roomId: room._id,
-        userId: req.user.userId,
-        role: "editor",
-      });
-    }
-
-    return res.status(200).json({ room: serializeRoom(room) });
-  } catch (error) {
-    console.error("Join room by id error:", error.message);
-    return res.status(500).json({ message: "Server error" });
-  }
-};
-
 const getRoomMetadata = async (req, res) => {
   try {
-    if (!ensureAuth(req, res)) {
-      return;
-    }
+    if (!requireAuth(req, res)) return;
 
     const { roomId } = req.params;
-
     if (!roomId) {
-      return res.status(400).json({ message: "Room id is required" });
+      return res.status(400).json({ message: "roomId is required" });
     }
 
-    const { room, membership } = await getRoomAndMembership(roomId, req.user.userId);
-
-    if (!room) {
-      return res.status(404).json({ message: "Room not found" });
-    }
-
+    const membership = await ensureRoomMember(roomId, req.user.userId);
     if (!membership) {
       return res.status(403).json({ message: "Access denied to this room" });
     }
 
-    return res.status(200).json({
-      room: {
-        ...serializeRoom(room),
-        role: membership.role,
-      },
-    });
+    const room = await Room.findById(roomId).lean();
+    if (!room) {
+      return res.status(404).json({ message: "Room not found" });
+    }
+
+    return res.status(200).json({ room });
   } catch (error) {
     console.error("Get room metadata error:", error.message);
     return res.status(500).json({ message: "Server error" });
@@ -415,38 +272,20 @@ const getRoomMetadata = async (req, res) => {
 
 const getRoomContent = async (req, res) => {
   try {
-    if (!ensureAuth(req, res)) {
-      return;
-    }
+    if (!requireAuth(req, res)) return;
 
     const { roomId } = req.params;
-
     if (!roomId) {
-      return res.status(400).json({ message: "Room id is required" });
+      return res.status(400).json({ message: "roomId is required" });
     }
 
-    const { room, membership } = await getRoomAndMembership(roomId, req.user.userId);
-
-    if (!room) {
-      return res.status(404).json({ message: "Room not found" });
-    }
-
+    const membership = await ensureRoomMember(roomId, req.user.userId);
     if (!membership) {
       return res.status(403).json({ message: "Access denied to this room" });
     }
 
-    const files = await RoomFile.find({ roomId: room._id }).sort({ path: 1 }).lean();
-
-    return res.status(200).json({
-      files: files.map((file) => ({
-        _id: file._id,
-        roomId: file.roomId,
-        path: file.path,
-        language: file.language,
-        content: file.content,
-        updatedAt: file.updatedAt,
-      })),
-    });
+    const files = await RoomFile.find({ roomId }).select("path language content").sort({ path: 1 }).lean();
+    return res.status(200).json({ files });
   } catch (error) {
     console.error("Get room content error:", error.message);
     return res.status(500).json({ message: "Server error" });
@@ -455,116 +294,136 @@ const getRoomContent = async (req, res) => {
 
 const updateRoomContent = async (req, res) => {
   try {
-    if (!ensureAuth(req, res)) {
-      return;
-    }
+    if (!requireAuth(req, res)) return;
 
     const { roomId } = req.params;
-    const { files } = req.body;
+    const files = Array.isArray(req.body?.files) ? req.body.files : null;
 
     if (!roomId) {
-      return res.status(400).json({ message: "Room id is required" });
+      return res.status(400).json({ message: "roomId is required" });
     }
 
-    if (!Array.isArray(files) || files.length === 0) {
-      return res.status(400).json({ message: "At least one file is required" });
+    if (!files) {
+      return res.status(400).json({ message: "files is required" });
     }
 
-    const { room, membership } = await getRoomAndMembership(roomId, req.user.userId);
-
-    if (!room) {
-      return res.status(404).json({ message: "Room not found" });
-    }
-
+    const membership = await ensureRoomMember(roomId, req.user.userId);
     if (!membership) {
       return res.status(403).json({ message: "Access denied to this room" });
     }
 
-    const sanitizedFiles = files
+    const normalized = files
       .map((file) => ({
-        path: typeof file.path === "string" ? file.path.trim() : "",
-        language: typeof file.language === "string" ? file.language.trim() : room.language,
-        content: typeof file.content === "string" ? file.content : "",
+        path: typeof file?.path === "string" ? file.path.trim() : "",
+        language: typeof file?.language === "string" ? file.language.trim() : "",
+        content: typeof file?.content === "string" ? file.content : "",
       }))
-      .filter((file) => file.path);
+      .filter((file) => Boolean(file.path));
 
-    if (sanitizedFiles.length === 0) {
-      return res.status(400).json({ message: "No valid files to save" });
+    await RoomFile.deleteMany({ roomId });
+    if (normalized.length > 0) {
+      await RoomFile.insertMany(
+        normalized.map((file) => ({
+          roomId,
+          path: file.path,
+          language: file.language,
+          content: file.content,
+        }))
+      );
     }
 
-    const incomingPaths = sanitizedFiles.map((file) => file.path);
+    await Room.updateOne({ _id: roomId }, { $set: { updatedAt: new Date() } });
 
-    // PUT semantics: payload is the complete room file set.
-    // Remove files that are no longer present (e.g. after rename/delete).
-    await RoomFile.deleteMany({
-      roomId: room._id,
-      path: { $nin: incomingPaths },
-    });
-
-    await Promise.all(
-      sanitizedFiles.map((file) =>
-        RoomFile.findOneAndUpdate(
-          { roomId: room._id, path: file.path },
-          {
-            $set: {
-              language: file.language,
-              content: file.content,
-            },
-          },
-          { new: true, upsert: true, setDefaultsOnInsert: true }
-        )
-      )
-    );
-
-    await Room.findByIdAndUpdate(room._id, { $set: { updatedAt: new Date() } });
-
-    return res.status(200).json({ message: "Room content saved" });
+    return res.status(200).json({ ok: true });
   } catch (error) {
     console.error("Update room content error:", error.message);
     return res.status(500).json({ message: "Server error" });
   }
 };
 
-const getRoomMembers = async (req, res) => {
+const joinRoomByInvite = async (req, res) => {
   try {
-    if (!ensureAuth(req, res)) {
-      return;
+    if (!requireAuth(req, res)) return;
+
+    const inviteCodeOrLink = typeof req.body?.inviteCodeOrLink === "string" ? req.body.inviteCodeOrLink.trim() : "";
+    if (!inviteCodeOrLink) {
+      return res.status(400).json({ message: "Invite code or link is required" });
     }
+
+    const codeMatch = inviteCodeOrLink.toUpperCase().match(/[A-F0-9]{8}/);
+    const inviteCode = codeMatch ? codeMatch[0] : inviteCodeOrLink.toUpperCase();
+
+    const room = await Room.findOne({ inviteCode }).lean();
+    if (!room) {
+      return res.status(404).json({ message: "Invalid invite code" });
+    }
+
+    const userId = req.user.userId;
+    const existing = await RoomMember.findOne({ roomId: room._id, userId }).select("_id").lean();
+    if (!existing) {
+      await RoomMember.create({ roomId: room._id, userId, role: "editor" });
+    }
+
+    return res.status(200).json({ room });
+  } catch (error) {
+    console.error("Join room by invite error:", error.message);
+    return res.status(500).json({ message: "Server error" });
+  }
+};
+
+const joinRoomById = async (req, res) => {
+  try {
+    if (!requireAuth(req, res)) return;
 
     const { roomId } = req.params;
-
     if (!roomId) {
-      return res.status(400).json({ message: "Room id is required" });
+      return res.status(400).json({ message: "roomId is required" });
     }
 
-    const { room, membership } = await getRoomAndMembership(roomId, req.user.userId);
-
+    const room = await Room.findById(roomId).lean();
     if (!room) {
       return res.status(404).json({ message: "Room not found" });
     }
 
+    const userId = req.user.userId;
+    const existing = await RoomMember.findOne({ roomId, userId }).select("_id").lean();
+    if (!existing) {
+      return res.status(403).json({ message: "Access denied to this room" });
+    }
+
+    return res.status(200).json({ room });
+  } catch (error) {
+    console.error("Join room by id error:", error.message);
+    return res.status(500).json({ message: "Server error" });
+  }
+};
+
+const getRoomMembers = async (req, res) => {
+  try {
+    if (!requireAuth(req, res)) return;
+
+    const { roomId } = req.params;
+    if (!roomId) {
+      return res.status(400).json({ message: "roomId is required" });
+    }
+
+    const membership = await ensureRoomMember(roomId, req.user.userId);
     if (!membership) {
       return res.status(403).json({ message: "Access denied to this room" });
     }
 
-    const memberships = await RoomMember.find({ roomId: room._id }).sort({ joinedAt: 1 }).lean();
-    const userIds = memberships.map((item) => item.userId);
-    const users = await User.find({ _id: { $in: userIds } }).select("name email").lean();
-    const userMap = new Map(users.map((user) => [user._id.toString(), user]));
+    const members = await RoomMember.find({ roomId }).select("userId role").lean();
+    const userIds = members.map((m) => m.userId);
+    const users = await User.find({ _id: { $in: userIds } }).select("name").lean();
+    const nameById = new Map(users.map((u) => [u._id.toString(), u.name]));
 
-    const members = memberships.map((item) => {
-      const user = userMap.get(item.userId.toString());
-
-      return {
-        userId: item.userId.toString(),
-        name: user?.name || "Unknown user",
-        email: user?.email || "",
-        role: item.role,
-        joinedAt: item.joinedAt,
-      };
+    return res.status(200).json({
+      members: members.map((m) => ({
+        userId: m.userId.toString(),
+        role: m.role,
+        name: nameById.get(m.userId.toString()) || "Unknown",
+      })),
     });
-
-    return res.status(200).json({ members });
   } catch (error) {
     console.error("Get room members error:", error.message);
     return res.status(500).json({ message: "Server error" });
@@ -573,39 +432,30 @@ const getRoomMembers = async (req, res) => {
 
 const getRoomMessages = async (req, res) => {
   try {
-    if (!ensureAuth(req, res)) {
-      return;
-    }
+    if (!requireAuth(req, res)) return;
 
     const { roomId } = req.params;
-
     if (!roomId) {
-      return res.status(400).json({ message: "Room id is required" });
+      return res.status(400).json({ message: "roomId is required" });
     }
 
-    const { room, membership } = await getRoomAndMembership(roomId, req.user.userId);
-
-    if (!room) {
-      return res.status(404).json({ message: "Room not found" });
-    }
-
+    const membership = await ensureRoomMember(roomId, req.user.userId);
     if (!membership) {
       return res.status(403).json({ message: "Access denied to this room" });
     }
 
-    const messages = await RoomMessage.find({ roomId: room._id }).sort({ createdAt: 1 }).limit(120).lean();
-    const userIds = [...new Set(messages.map((item) => item.userId.toString()))];
+    const messages = await RoomMessage.find({ roomId }).sort({ createdAt: 1 }).limit(200).lean();
+    const userIds = Array.from(new Set(messages.map((m) => m.userId.toString())));
     const users = await User.find({ _id: { $in: userIds } }).select("name").lean();
-    const userMap = new Map(users.map((user) => [user._id.toString(), user]));
+    const nameById = new Map(users.map((u) => [u._id.toString(), u.name]));
 
     return res.status(200).json({
-      messages: messages.map((item) => ({
-        id: item._id.toString(),
-        roomId: item.roomId.toString(),
-        userId: item.userId.toString(),
-        senderName: userMap.get(item.userId.toString())?.name || "Unknown",
-        text: item.text,
-        createdAt: item.createdAt,
+      messages: messages.map((message) => ({
+        id: message._id.toString(),
+        userId: message.userId.toString(),
+        senderName: nameById.get(message.userId.toString()) || "Unknown",
+        text: message.text,
+        createdAt: message.createdAt,
       })),
     });
   } catch (error) {
@@ -616,48 +466,39 @@ const getRoomMessages = async (req, res) => {
 
 const sendRoomMessage = async (req, res) => {
   try {
-    if (!ensureAuth(req, res)) {
-      return;
-    }
+    if (!requireAuth(req, res)) return;
 
     const { roomId } = req.params;
     const text = typeof req.body?.text === "string" ? req.body.text.trim() : "";
 
     if (!roomId) {
-      return res.status(400).json({ message: "Room id is required" });
+      return res.status(400).json({ message: "roomId is required" });
     }
 
     if (!text) {
-      return res.status(400).json({ message: "Message text is required" });
+      return res.status(400).json({ message: "text is required" });
     }
 
     if (text.length > 2000) {
       return res.status(400).json({ message: "Message is too long" });
     }
 
-    const { room, membership } = await getRoomAndMembership(roomId, req.user.userId);
-
-    if (!room) {
-      return res.status(404).json({ message: "Room not found" });
-    }
-
+    const membership = await ensureRoomMember(roomId, req.user.userId);
     if (!membership) {
       return res.status(403).json({ message: "Access denied to this room" });
     }
 
     const created = await RoomMessage.create({
-      roomId: room._id,
+      roomId,
       userId: req.user.userId,
       text,
     });
 
     const sender = await User.findById(req.user.userId).select("name").lean();
-    await Room.findByIdAndUpdate(room._id, { $set: { updatedAt: new Date() } });
 
     return res.status(201).json({
       message: {
         id: created._id.toString(),
-        roomId: created.roomId.toString(),
         userId: created.userId.toString(),
         senderName: sender?.name || "Unknown",
         text: created.text,
@@ -685,3 +526,4 @@ module.exports = {
   getRoomMessages,
   sendRoomMessage,
 };
+

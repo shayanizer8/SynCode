@@ -25,26 +25,37 @@ import {
 import { clearAuthToken, getAuthToken } from "../services/tokenStorage";
 import { getCurrentUserRequest } from "../services/authApi";
 
-const navItems = [
-  { key: "home", label: "Home", icon: Home, active: true },
-  { key: "projects", label: "My Projects", icon: FolderClosed, active: false },
-];
+const normalizeInviteEmails = (value) =>
+  Array.from(
+    new Set(
+      String(value || "")
+        .split(/[,\s;]+/g)
+        .map((item) => item.trim().toLowerCase())
+        .filter(Boolean)
+    )
+  );
+
+const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
 const badgeClassMap = {
   Python: "badge-python",
   JavaScript: "badge-javascript",
   Java: "badge-java",
   "C++": "badge-cpp",
+  Go: "badge-go",
+  Rust: "badge-rust",
+  TypeScript: "badge-typescript",
+  Dart: "badge-dart",
 };
 
 const avatarToneClass = ["tone-a", "tone-b", "tone-c", "tone-d"];
-const roomLanguageOptions = ["Python", "JavaScript", "C++", "Java"];
+const roomLanguageOptions = ["Python", "JavaScript", "TypeScript", "C++", "Java", "Go", "Rust", "Dart"];
 
 const initialCreateFormState = {
   name: "",
   language: "Python",
   isPrivate: true,
-  inviteEmail: "",
+  inviteEmails: "",
 };
 
 const getRelativeEditedLabel = (updatedAt) => {
@@ -91,6 +102,7 @@ const Dashboard = () => {
   const [createForm, setCreateForm] = useState(initialCreateFormState);
   const [createRoomError, setCreateRoomError] = useState("");
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
+  const [inviteEmailError, setInviteEmailError] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [joinInput, setJoinInput] = useState("");
   const [joinRoomError, setJoinRoomError] = useState("");
@@ -417,11 +429,22 @@ const Dashboard = () => {
       [name]: value,
     }));
     setCreateRoomError("");
+    if (name === "inviteEmails") {
+      setInviteEmailError("");
+    }
   };
 
   const handleCreateRoom = async () => {
     if (!createForm.name.trim()) {
       setCreateRoomError("Room name is required");
+      return;
+    }
+
+    const inviteEmails = normalizeInviteEmails(createForm.inviteEmails);
+    const invalidEmails = inviteEmails.filter((email) => !isValidEmail(email));
+
+    if (invalidEmails.length > 0) {
+      setInviteEmailError(`Invalid email(s): ${invalidEmails.join(", ")}`);
       return;
     }
 
@@ -440,7 +463,7 @@ const Dashboard = () => {
         name: createForm.name.trim(),
         language: createForm.language,
         isPrivate: createForm.isPrivate,
-        inviteEmail: createForm.inviteEmail.trim(),
+        inviteEmails,
       });
 
       const createdRoom = response.data?.room;
@@ -453,6 +476,7 @@ const Dashboard = () => {
 
       await refreshRooms();
       setCreateForm(initialCreateFormState);
+      setInviteEmailError("");
       setIsRoomModalOpen(false);
       navigate(`/editor/${createdRoomId}`);
     } catch (error) {
@@ -576,15 +600,20 @@ const Dashboard = () => {
         </div>
 
         <nav className="sidebar-nav">
-          {navItems.map((item) => {
+          {[
+            { key: "home", label: "Home", icon: Home, to: "/dashboard" },
+            { key: "invitations", label: "My Invitations", icon: FolderClosed, to: "/invitations" },
+          ].map((item) => {
             const Icon = item.icon;
+            const isActive = location.pathname === item.to;
             return (
               <button
                 key={item.key}
                 type="button"
-                className={`sidebar-icon-btn${item.active ? " is-active" : ""}`}
+                className={`sidebar-icon-btn${isActive ? " is-active" : ""}`}
                 data-tooltip={item.label}
                 aria-label={item.label}
+                onClick={() => navigate(item.to)}
               >
                 <Icon size={18} />
               </button>
@@ -824,15 +853,17 @@ const Dashboard = () => {
                 </div>
 
                 <div className="room-field">
-                  <label htmlFor="invite-email">Invite by Email (optional)</label>
+                  <label htmlFor="invite-emails">Invite by Email (optional)</label>
                   <input
-                    id="invite-email"
-                    name="inviteEmail"
+                    id="invite-emails"
+                    name="inviteEmails"
                     type="text"
-                    placeholder="Enter one email address"
-                    value={createForm.inviteEmail}
+                    placeholder="Enter emails separated by comma or space"
+                    value={createForm.inviteEmails}
                     onChange={handleCreateInputChange}
                   />
+                  <small>Invitations will be sent and invitees must accept to join.</small>
+                  {inviteEmailError ? <p className="form-server-error">{inviteEmailError}</p> : null}
                 </div>
 
                 <button
