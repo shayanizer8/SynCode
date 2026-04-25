@@ -10,15 +10,27 @@ const roomsRoutes = require("./routes/roomsRoutes");
 const invitationsRoutes = require("./routes/invitationsRoutes");
 const executionRoutes = require("./routes/executionRoutes");
 const { initializeRealtime } = require("./socket/realtime");
+const { buildAllowedOriginChecker } = require("./config/allowedOrigins");
 
 dotenv.config();
 
 const app = express();
 const httpServer = http.createServer(app);
 const PORT = process.env.PORT || 5000;
-const CLIENT_ORIGIN = process.env.CLIENT_URL || "http://localhost:5173";
+const isAllowedOrigin = buildAllowedOriginChecker();
 
-app.use(cors({ origin: CLIENT_ORIGIN, credentials: true }));
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (isAllowedOrigin(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error(`Origin ${origin} is not allowed by CORS`));
+    },
+    credentials: true,
+  })
+);
 app.use(express.json());
 
 app.use("/api", testRoutes);
@@ -27,7 +39,7 @@ app.use("/api/rooms", roomsRoutes);
 app.use("/api/invitations", invitationsRoutes);
 app.use("/api/execute", executionRoutes);
 
-initializeRealtime(httpServer, CLIENT_ORIGIN);
+initializeRealtime(httpServer, isAllowedOrigin);
 
 const startServer = async () => {
   try {

@@ -131,10 +131,16 @@ const isMember = async (roomId, userId) => {
   return Boolean(membership);
 };
 
-const initializeRealtime = (httpServer, allowedOrigin) => {
+const initializeRealtime = (httpServer, isAllowedOrigin) => {
   const io = new Server(httpServer, {
     cors: {
-      origin: allowedOrigin,
+      origin(origin, callback) {
+        if (isAllowedOrigin(origin)) {
+          return callback(null, true);
+        }
+
+        return callback(new Error(`Origin ${origin} is not allowed by Socket.IO CORS`));
+      },
       methods: ["GET", "POST"],
       credentials: true,
     },
