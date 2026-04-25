@@ -79,7 +79,11 @@ const Login = () => {
         },
       });
     } catch (error) {
-      const message = error.response?.data?.message || "Unable to login. Please try again.";
+      const message =
+        error.response?.data?.message ||
+        (error.request
+          ? "Unable to reach the server. Check that the backend is running and CLIENT_URL matches your Vite URL."
+          : "Unable to login. Please try again.");
       setServerError(message);
     } finally {
       setIsSubmitting(false);
@@ -111,7 +115,11 @@ const Login = () => {
         },
       });
     } catch (error) {
-      const message = error.response?.data?.message || "Unable to login with Google. Please try again.";
+      const message =
+        error.response?.data?.message ||
+        (error.request
+          ? "Unable to reach the server. Check that the backend is running and CLIENT_URL matches your Vite URL."
+          : "Unable to login with Google. Please try again.");
       setServerError(message);
     } finally {
       setIsSubmitting(false);
