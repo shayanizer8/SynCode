@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=JetBrains+Mono:wght@400;500;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap");
 
 :root {
   --bg: #0d1117;
@@ -9,7 +9,7 @@
   --accent: #2f81f7;
   --accent-strong: #1f6feb;
   --mono: "JetBrains Mono", Consolas, Monaco, monospace;
-  --ui: "Space Mono", "Segoe UI", Tahoma, sans-serif;
+  --ui: "Space Grotesk", "Segoe UI", Tahoma, sans-serif;
 }
 
 * {
@@ -126,16 +126,46 @@ a {
 }
 
 .hero-section {
+  position: relative;
+  overflow: hidden;
   min-height: calc(100vh - 74px);
   display: flex;
   align-items: center;
   padding: 42px 0 70px;
+  isolation: isolate;
+}
+
+.hero-section::before,
+.hero-section::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.hero-section::before {
+  background:
+    radial-gradient(circle at 18% 28%, rgba(47, 129, 247, 0.2), transparent 28%),
+    radial-gradient(circle at 82% 38%, rgba(88, 166, 255, 0.16), transparent 24%),
+    radial-gradient(circle at 62% 78%, rgba(32, 91, 167, 0.12), transparent 26%);
+  filter: blur(10px);
+  z-index: -2;
+}
+
+.hero-section::after {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 140px 140px;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.45), transparent 95%);
+  opacity: 0.28;
+  z-index: -1;
 }
 
 .hero-grid {
   display: grid;
   grid-template-columns: 1.05fr 1fr;
-  gap: 200px;
+  gap: 120px;
   align-items: center;
 }
 
@@ -154,17 +184,26 @@ a {
 
 .hero-copy h1 {
   margin: 0;
-  font-size: clamp(2.2rem, 6vw, 4rem);
-  line-height: 1.03;
-  letter-spacing: -0.02em;
+  display: grid;
+  gap: 8px;
+  font-size: clamp(2.6rem, 6vw, 4.5rem);
+  line-height: 0.95;
+  letter-spacing: -0.04em;
+  max-width: 8.5ch;
+  text-wrap: balance;
+}
+
+.hero-copy h1 span:last-child {
+  color: #c7d8f3;
+  text-shadow: 0 0 18px rgba(88, 166, 255, 0.16);
 }
 
 .hero-subtext {
-  margin: 22px 0 0;
-  max-width: 650px;
+  margin: 28px 0 0;
+  max-width: 34ch;
   color: var(--text-soft);
-  font-size: 1.1rem;
-  line-height: 1.6;
+  font-size: 1.04rem;
+  line-height: 1.75;
 }
 
 .hero-actions {
@@ -188,6 +227,7 @@ a {
 }
 
 .editor-mockup {
+  position: relative;
   border-radius: 12px;
   border: 1px solid var(--border);
   background: linear-gradient(180deg, #0b111b 0%, #070d16 100%);
@@ -195,13 +235,31 @@ a {
   box-shadow: 0 22px 65px rgba(0, 0, 0, 0.35);
 }
 
-.mockup-header {
-  min-height: 44px;
+.editor-mockup::before {
+  content: "";
+  position: absolute;
+  inset: -18% 12% auto;
+  height: 130px;
+  background: radial-gradient(circle, rgba(47, 129, 247, 0.14), transparent 72%);
+  pointer-events: none;
+}
+
+.mockup-topbar {
+  min-height: 50px;
   border-bottom: 1px solid #222f3e;
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  gap: 12px;
   padding: 0 14px;
+  background: rgba(10, 16, 26, 0.88);
+}
+
+.mockup-brand,
+.mockup-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .dot {
@@ -229,31 +287,149 @@ a {
   font-size: 0.74rem;
 }
 
+.mockup-chip,
+.mockup-button {
+  min-height: 28px;
+  border-radius: 8px;
+  border: 1px solid #2a3545;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: #bfd0e6;
+  background: rgba(16, 25, 39, 0.9);
+}
+
+.mockup-button-run {
+  color: #f4fbff;
+  background: #238636;
+  border-color: #238636;
+}
+
+.mockup-workspace {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr) 182px;
+  min-height: 380px;
+}
+
+.mockup-sidebar,
+.mockup-collab {
+  background: rgba(18, 24, 35, 0.96);
+}
+
+.mockup-sidebar {
+  border-right: 1px solid #202b3a;
+  padding: 16px 12px;
+}
+
+.mockup-panel-label {
+  margin: 0 0 14px;
+  color: #7f8da1;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.mockup-file-tree {
+  display: grid;
+  gap: 8px;
+}
+
+.mockup-folder,
+.mockup-file {
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-family: var(--mono);
+  font-size: 0.76rem;
+  color: #aeb9c8;
+}
+
+.mockup-folder {
+  color: #d8e2ee;
+}
+
+.mockup-file.active {
+  background: rgba(47, 129, 247, 0.18);
+  color: #e7f1ff;
+}
+
+.mockup-editor {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  min-width: 0;
+}
+
+.mockup-tabbar {
+  min-height: 42px;
+  border-bottom: 1px solid #222f3e;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  gap: 8px;
+  background: rgba(12, 18, 29, 0.8);
+}
+
+.mockup-tab {
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: #7f8da1;
+}
+
+.mockup-tab.active {
+  background: rgba(47, 129, 247, 0.14);
+  color: #edf4ff;
+}
+
 .mockup-code {
   position: relative;
-  padding: 18px 18px 20px;
+  padding: 16px 14px 20px;
+  background: #0b1118;
+  overflow: hidden;
 }
 
-.mockup-code pre {
-  margin: 0;
-  overflow-x: auto;
+.editor-line {
+  position: relative;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  min-height: 34px;
+  padding: 0 8px;
+  border-radius: 10px;
 }
 
-.mockup-code code {
+.editor-line code {
   font-family: var(--mono);
-  font-size: 0.86rem;
-  line-height: 1.72;
+  font-size: 0.77rem;
+  line-height: 1.7;
   color: #c9d1d9;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .cursor {
   position: absolute;
   font-family: var(--mono);
-  font-size: 0.65rem;
+  font-size: 0.58rem;
   color: #0d1117;
-  padding: 2px 6px;
+  padding: 2px 5px;
   border-radius: 6px;
   font-weight: 700;
+  max-width: calc(100% - 24px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.editor-line.is-active {
+  background: linear-gradient(90deg, rgba(47, 129, 247, 0.12), rgba(47, 129, 247, 0.03));
 }
 
 .cursor-a {
@@ -262,6 +438,117 @@ a {
 
 .cursor-b {
   background: #f2cc60;
+}
+
+.line-number {
+  font-family: var(--mono);
+  font-size: 0.73rem;
+  color: #4c596d;
+  text-align: right;
+}
+
+.token-keyword {
+  color: #79c0ff;
+}
+
+.token-type {
+  color: #c792ea;
+}
+
+.token-string {
+  color: #ffb78a;
+}
+
+.mockup-console {
+  border-top: 1px solid #222f3e;
+  background: #080d14;
+}
+
+.mockup-console-bar {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  border-bottom: 1px solid #1b2431;
+  color: #b7c5d8;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+}
+
+.mockup-console-chip {
+  color: #9fd3ae;
+}
+
+.mockup-console p {
+  margin: 0;
+  padding: 12px;
+  color: #8ea2bb;
+  font-family: var(--mono);
+  font-size: 0.74rem;
+}
+
+.mockup-collab {
+  border-left: 1px solid #202b3a;
+  padding: 14px 10px;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.mockup-collab-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.mockup-collab-head p {
+  margin: 0;
+  color: #c9d4e3;
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.mockup-collab-head span {
+  border: 1px solid #29476f;
+  border-radius: 999px;
+  padding: 4px 8px;
+  min-width: 72px;
+  color: #9dc2f8;
+  font-family: var(--mono);
+  font-size: 0.61rem;
+  text-transform: uppercase;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.mockup-member {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.mockup-member .presence-avatar {
+  width: 24px;
+  height: 24px;
+  border: none;
+}
+
+.mockup-member strong {
+  display: block;
+  color: #edf4ff;
+  font-size: 0.74rem;
+}
+
+.mockup-member small {
+  color: #8ea2bb;
+  font-family: var(--mono);
+  font-size: 0.62rem;
 }
 
 .features-section,
@@ -507,6 +794,11 @@ a {
 @media (max-width: 980px) {
   .hero-grid {
     grid-template-columns: 1fr;
+    gap: 48px;
+  }
+
+  .mockup-workspace {
+    grid-template-columns: 96px minmax(0, 1fr) 168px;
   }
 
   .feature-grid {
@@ -535,6 +827,15 @@ a {
 
   .feature-grid {
     grid-template-columns: 1fr;
+  }
+
+  .hero-copy h1 {
+    max-width: 9.5ch;
+  }
+
+  .mockup-topbar,
+  .mockup-workspace {
+    overflow: auto;
   }
 
   .hero-actions {

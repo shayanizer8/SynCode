@@ -44,11 +44,13 @@ const Landing = () => {
         <section className="hero-section">
           <div className="landing-container hero-grid">
             <div className="hero-copy">
-              <p className="pill">v2.4 KINETIC ARCHITECT IS LIVE</p>
-              <h1>Code Together, In Real Time</h1>
+              <h1>
+                <span>Code Together.</span>
+                <span>In Real Time.</span>
+              </h1>
               <p className="hero-subtext">
                 A collaborative code editor for developers and students. Write, run, and debug
-                code with your team live.
+                with your team in one shared workspace.
               </p>
 
               <div className="hero-actions">
@@ -61,31 +63,99 @@ const Landing = () => {
             </div>
 
             <div className="editor-mockup" aria-label="Live collaborative editor preview">
-              <div className="mockup-header">
-                <span className="dot red"></span>
-                <span className="dot amber"></span>
-                <span className="dot green"></span>
-                <span className="mockup-title">index.js - syncode</span>
+              <div className="mockup-topbar">
+                <div className="mockup-brand">
+                  <span className="dot red"></span>
+                  <span className="dot amber"></span>
+                  <span className="dot green"></span>
+                  <span className="mockup-title">SynCode workspace</span>
+                </div>
+                <div className="mockup-actions">
+                  <span className="mockup-chip">JAVA</span>
+                  <span className="mockup-button">Invite</span>
+                  <span className="mockup-button mockup-button-run">Run</span>
+                </div>
               </div>
-              <div className="mockup-code">
-                <pre>
-                  <code>{`import { collaboration } from "@syncode/core";
 
-async function initRoom() {
-  const session = await collaboration.create({
-    roomId: "kinetic-architect-99",
-    mode: "real-time",
-  });
+              <div className="mockup-workspace">
+                <aside className="mockup-sidebar">
+                  <p className="mockup-panel-label">Explorer</p>
+                  <div className="mockup-file-tree">
+                    <div className="mockup-folder">src</div>
+                    <div className="mockup-file active">Main.java</div>
+                    <div className="mockup-file">RoomChat.java</div>
+                  </div>
+                </aside>
 
-  return session;
-}`}</code>
-                </pre>
-                <span className="cursor cursor-a" style={{ top: "82px", left: "168px" }}>
-                  alex.dev
-                </span>
-                <span className="cursor cursor-b" style={{ top: "132px", left: "228px" }}>
-                  sara.codes
-                </span>
+                <div className="mockup-editor">
+                  <div className="mockup-tabbar">
+                    <span className="mockup-tab active">Main.java</span>
+                    <span className="mockup-tab">+</span>
+                  </div>
+
+                  <div className="mockup-code">
+                    <div className="editor-line">
+                      <span className="line-number">1</span>
+                      <code>
+                        <span className="token-keyword">public class</span> Main {"{"}
+                      </code>
+                    </div>
+                    <div className="editor-line">
+                      <span className="line-number">2</span>
+                      <code>
+                        &nbsp;&nbsp;<span className="token-keyword">public static void</span> main(
+                        <span className="token-type">String</span>[] args) {"{"}
+                      </code>
+                    </div>
+                    <div className="editor-line is-active">
+                      <span className="line-number">3</span>
+                      <code>
+                        &nbsp;&nbsp;&nbsp;&nbsp;System.out.println(
+                        <span className="token-string">"Welcome to SynCode"</span>);
+                      </code>
+                      <span className="cursor cursor-a" style={{ top: "-24px", left: "220px" }}>
+                        ali
+                      </span>
+                    </div>
+                    <div className="editor-line">
+                      <span className="line-number">4</span>
+                      <code>&nbsp;&nbsp;{"}"}</code>
+                    </div>
+                    <div className="editor-line">
+                      <span className="line-number">5</span>
+                      <code>{"}"}</code>
+                    </div>
+                  </div>
+
+                  <div className="mockup-console">
+                    <div className="mockup-console-bar">
+                      <span>Output</span>
+                      <span className="mockup-console-chip">ready</span>
+                    </div>
+                    <p>Click Run to execute your current file.</p>
+                  </div>
+                </div>
+
+                <aside className="mockup-collab">
+                  <div className="mockup-collab-head">
+                    <p>Collaborators</p>
+                    <span>1 active</span>
+                  </div>
+                  <div className="mockup-member">
+                    <span className="presence-avatar presence-avatar-a">A</span>
+                    <div>
+                      <strong>Ali</strong>
+                      <small>owner • online</small>
+                    </div>
+                  </div>
+                  <div className="mockup-member">
+                    <span className="presence-avatar presence-avatar-b">Z</span>
+                    <div>
+                      <strong>Zain</strong>
+                      <small>editor • offline</small>
+                    </div>
+                  </div>
+                </aside>
               </div>
             </div>
           </div>
