@@ -9,6 +9,10 @@ const languageIdMap = {
   Dart: 90,
 };
 
+const MAX_SOURCE_CODE_CHARS = 50000;
+const MAX_STDIN_CHARS = 10000;
+const JUDGE0_REQUEST_TIMEOUT_MS = 12000;
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const buildJudge0Headers = () => {
@@ -36,8 +40,20 @@ const executeCode = async (req, res) => {
       return res.status(400).json({ message: "sourceCode is required" });
     }
 
+    if (typeof stdin !== "string") {
+      return res.status(400).json({ message: "stdin must be a string" });
+    }
+
     if (!language || !languageIdMap[language]) {
       return res.status(400).json({ message: "Unsupported language for execution" });
+    }
+
+    if (sourceCode.length > MAX_SOURCE_CODE_CHARS) {
+      return res.status(413).json({ message: "sourceCode exceeds the maximum allowed size" });
+    }
+
+    if (stdin.length > MAX_STDIN_CHARS) {
+      return res.status(413).json({ message: "stdin exceeds the maximum allowed size" });
     }
 
     const judge0BaseUrl = process.env.JUDGE0_BASE_URL || "https://ce.judge0.com";
@@ -48,6 +64,7 @@ const executeCode = async (req, res) => {
       {
         method: "POST",
         headers,
+        signal: AbortSignal.timeout(JUDGE0_REQUEST_TIMEOUT_MS),
         body: JSON.stringify({
           language_id: languageIdMap[language],
           source_code: sourceCode,
@@ -77,6 +94,7 @@ const executeCode = async (req, res) => {
           {
             method: "GET",
             headers,
+            signal: AbortSignal.timeout(JUDGE0_REQUEST_TIMEOUT_MS),
           }
         );
 
@@ -111,6 +129,10 @@ const executeCode = async (req, res) => {
       },
     });
   } catch (error) {
+    if (error?.name === "TimeoutError" || error?.name === "AbortError") {
+      return res.status(504).json({ message: "Code execution provider timed out" });
+    }
+
     console.error("Execute code error:", error.message);
     return res.status(500).json({ message: "Server error" });
   }
