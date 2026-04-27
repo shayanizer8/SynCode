@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 5000;
 const isAllowedOrigin = buildAllowedOriginChecker();
 const authRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 10,
+  limit: 15,
   standardHeaders: true,
   legacyHeaders: false,
   message: { message: "Too many authentication attempts. Please try again later." },
